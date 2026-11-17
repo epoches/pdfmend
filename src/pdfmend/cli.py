@@ -10,10 +10,15 @@ from pathlib import Path
 from pdfmend import __version__, feedback, fields, llm, structure
 from pdfmend.extract import extract
 from pdfmend.quality import score_document
-from pdfmend.render import to_json, to_markdown, to_xlsx, write_html
+from pdfmend.services.conversion import (
+    DEFAULT_FORMATS as _DEFAULT_FORMATS,
+    FORMATS,
+    SUPPORTED,
+    convert_file,
+    normalize_formats,
+    scan_files,
+)
 
-SUPPORTED = {".pdf", ".docx", ".xlsx", ".pptx"}
-FORMATS = ("md", "xlsx", "json", "html")
 DEFAULT_FORMATS = "md,xlsx,html"
 
 
@@ -45,26 +50,12 @@ def _bar(score: int, width: int = 20) -> str:
     return "[" + "#" * filled + "." * (width - filled) + "]"
 
 
-def _convert_one(src: Path, outdir: Path, formats: set[str], quiet: bool, ocr: str = "never") -> int:
-    doc = extract(src, ocr=ocr)
-    report = score_document(doc)
-    outdir.mkdir(parents=True, exist_ok=True)
-    stem = src.stem
-    written = []
-    if "md" in formats:
-        p = outdir / f"{stem}.md"
-        p.write_text(to_markdown(report), encoding="utf-8")
-        written.append(p.name)
-    if "xlsx" in formats:
-        if report.tables:
-            written.append(to_xlsx(report, outdir / f"{stem}.xlsx").name)
-        elif not quiet:
-            _p("  ! 没有表格，跳过 xlsx")
-    if "json" in formats:
-        written.append(to_json(report, outdir / f"{stem}.report.json").name)
-    if "html" in formats:
-        written.append(write_html(report, outdir / f"{stem}.report.html").name)
-
+def _convert_one(src: Path, outdir: Path, formats: set[str], quiet: bool, ocr: str = "never") -> int | None:
+    result = convert_file(src, output_dir=outdir, formats=sorted(formats), ocr=ocr)
+    if not result.ok:
+        _p(f"{src.name}: 失败 — {result.error}")
+        return None
+    report = result.report
     if not quiet:
         _p(f"{src.name}")
         _p(f"  {_bar(report.score)} {report.score}/100  {report.verdict}")
@@ -74,34 +65,31 @@ def _convert_one(src: Path, outdir: Path, formats: set[str], quiet: bool, ocr: s
             _p(f"  - table {t.id:<4} {where} {t.shape:>8}  conf {t.confidence:.2f}{flag}")
         for r in report.reasons:
             _p(f"  · {r}")
-        steps = list(dict.fromkeys(doc.meta.get("ocr_steps") or []))
+        steps = list(dict.fromkeys(result.report.document.meta.get("ocr_steps") or []))
         if steps:
             _p(f"  · 图像预处理：{', '.join(steps)}")
-        for err in doc.meta.get("ocr_errors") or []:
+        for err in result.report.document.meta.get("ocr_errors") or []:
             _p(f"  ! OCR {err}")
-        if written:
-            _p(f"  -> {', '.join(written)}")
+        for warning in result.warnings:
+            _p(f"  ! {warning}")
+        if result.outputs:
+            _p(f"  -> {', '.join(result.output_names)}")
         _p()
     return report.score
 
 
 def cmd_convert(args: argparse.Namespace) -> int:
-    files: list[Path] = []
-    for p in args.input:
-        path = Path(p)
-        if path.is_dir():
-            files.extend(sorted(f for f in path.rglob("*") if f.suffix.lower() in SUPPORTED))
-        elif path.is_file():
-            files.append(path)
-        else:
-            _p(f"跳过：找不到 {p}")
+    files = scan_files(args.input)
+    missing = [p for p in args.input if not Path(p).exists()]
+    for p in missing:
+        _p(f"跳过：找不到 {p}")
     if not files:
         _p("没有可处理的文件。")
         return 1
-    formats = {f.strip() for f in args.format.split(",") if f.strip()}
-    bad = formats - set(FORMATS)
-    if bad:
-        _p(f"未知格式：{','.join(sorted(bad))}（可选 {','.join(FORMATS)}）")
+    try:
+        normalize_formats(args.format)
+    except ValueError as exc:
+        _p(str(exc))
         return 1
 
     scores = []
@@ -110,13 +98,15 @@ def cmd_convert(args: argparse.Namespace) -> int:
             score = _convert_one(
                 src,
                 Path(args.outdir) if args.outdir else src.parent,
-                formats,
+                set(normalize_formats(args.format)),
                 args.quiet,
                 ocr=args.ocr,
             )
-            scores.append(score)
         except Exception as e:  # noqa: BLE001 - one bad file must not kill the batch
             _p(f"{src.name}: 失败 — {type(e).__name__}: {e}")
+            continue
+        if score is not None:
+            scores.append(score)
     if args.strict and scores and min(scores) < args.strict:
         _p(f"严格模式：最低分 {min(scores)} < {args.strict}")
         return 2

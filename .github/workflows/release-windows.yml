@@ -1,0 +1,75 @@
+name: release-windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（留空 = 用 pyproject 里的版本）"
+        required: false
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install (desktop + build extras)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev,desktop,build]"
+
+      - name: Tests (offscreen, no display needed)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: pytest -q
+
+      - name: Freeze with PyInstaller (one folder)
+        run: python -m PyInstaller packaging/pdfmend.spec --noconfirm --clean
+
+      - name: Version and zip
+        id: pack
+        shell: pwsh
+        run: |
+          $version = "${{ github.event.inputs.version }}"
+          if (-not $version) {
+            $version = (& python -c "import pdfmend; print(pdfmend.__version__)").Trim()
+          }
+          $zip = "PDFMend-$version-windows-x64.zip"
+          Compress-Archive -Path "dist\PDFMend\*" -DestinationPath "dist\$zip" -CompressionLevel Optimal
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath "dist\$zip").Hash.ToLower()
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "zip=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "sha256=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PDFMend-windows-x64
+          path: dist/*.zip
+
+      - name: Attach to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v{0}', steps.pack.outputs.version) }}
+          name: PDFMend ${{ steps.pack.outputs.version }}
+          body: |
+            Windows 10/11 x64, 解压即用（无需安装 Python）。
+
+            文件：${{ steps.pack.outputs.zip }}
+            SHA256：`${{ steps.pack.outputs.sha256 }}`
+
+            标准版 = 本地解析 + Markdown/Excel/JSON/HTML 导出 + 质量报告 + AI 字段抽取（自带 Key）。
+            OCR 版单独发布（体积大，含 PaddleOCR）。
+          files: dist/*.zip
+          draft: false
+          prerelease: contains(steps.pack.outputs.version, 'beta')

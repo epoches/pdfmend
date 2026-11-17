@@ -146,9 +146,31 @@ pdfmend feedback stats                         # 看哪类错误反复出现
 
 边界：证据由模型给出，可能张冠李戴，金额、日期、甲乙方务必对照原件；扫描件的表格仍然只出文字行。
 
+## 桌面版：PDFMend Desktop（v0.6，Windows 10/11 x64）
+
+不想开命令行的人，用同一个引擎做的图形界面：拖文件 → 选格式 → 看质量分 → 拿走 Markdown / Excel。
+
+- 下载：到 [Releases](https://github.com/epoches/pdfmend/releases) 拿 `PDFMend-*-windows-x64.zip`，解压双击 `PDFMend.exe`，**不需要装 Python**。
+- 从源码跑：`pip install -e ".[desktop]"`，然后 `pdfmend-desktop`（或 `python -m pdfmend.desktop`）。
+- 四个页面：首页（拖拽/最近）、文件转换（队列、格式、输出目录、进度、可取消）、结果预览（质量卡、Markdown、报告 JSON、输出文件、AI 字段抽取）、设置（格式/OCR/主题/服务商/模型/Base URL/Key）。
+- 批量队列跑在 `QThreadPool` 里，界面不冻结；转换逻辑与 CLI 是同一套 `services/conversion.py`，所以质量分不会两处不一致。
+- **Key 存进 Windows 凭据管理器**（`keyring`），不写配置文件、不写日志；没 Key 时所有本地功能照常可用。
+- 免费、MIT、无账号、无云上传；「支持作者」只是一页说明，不做支付、不加权限。
+
+自己打包：
+
+```powershell
+pip install -e ".[desktop,build]"
+powershell -File packaging\build.ps1          # pytest → PyInstaller(onedir) → zip + SHA256
+iscc packaging\installer.iss /DAppVersion=0.6.0   # 可选：Inno Setup 安装包
+```
+
+CI 里 `.github/workflows/release-windows.yml` 在打 `v*` tag 时自动跑测试、打包、算 SHA256 并挂到 Release。
+Standard 版不含 OCR（体积小）；OCR 依赖（PaddleOCR/PaddlePaddle）单独作为可选包安装，许可证需自行核对后再分发。
+
 ## 安装
 
-还没发 PyPI（v0.5.2），先源码安装：
+还没发 PyPI（v0.6.0），先源码安装：
 
 ```bash
 git clone https://github.com/epoches/pdfmend.git
@@ -158,7 +180,7 @@ python -m venv .venv
 pip install -e .
 ```
 
-要求 Python ≥ 3.10。默认依赖只有 `pdfplumber`、`python-docx`、`openpyxl`、`python-pptx`，没有云端调用。`pip install "pdfmend[ocr]"` 才装 OpenCV/PaddleOCR；`pdfmend fields` 只用标准库 + 环境变量里的 key。
+要求 Python ≥ 3.10。默认依赖只有 `pdfplumber`、`python-docx`、`openpyxl`、`python-pptx`，没有云端调用。`pip install "pdfmend[ocr]"` 才装 OpenCV/PaddleOCR；`pip install "pdfmend[desktop]"` 才装 PySide6（桌面版）；`pdfmend fields` 只用标准库 + 环境变量里的 key。
 
 ## 用法
 
@@ -269,7 +291,8 @@ v0.5 起文档分是六个可测维度（不可测的维度会丢弃，剩下的
 
 ```bash
 pip install -e ".[dev]"
-pytest                     # 112 个测试，含真实 PDF/DOCX/XLSX 夹具
+pytest                     # 134 个测试，含真实 PDF/DOCX/XLSX 夹具与离屏 GUI 测试
+pip install -e ".[dev,desktop]"   # 桌面版：额外装 PySide6 + keyring
 python examples/make_demo.py
 python examples/make_messy.py
 python examples/make_scan.py       # 合成扫描件，验证 OCR/--vision
@@ -291,6 +314,7 @@ python examples/benchmark_vs_markitdown.py
 - v0.5 adds **structure and long documents**: headings, bullet lists, numbered lists and contract clauses are recovered as structure (`pdfmend structure`), long PDFs are chunked page-by-page and merged with per-field evidence and page numbers, and `--profile resume|contract|research_report` ships the field templates in-repo as JSON.
 - v0.5.1 nests `(1)(2)(3)` sub-items under their clause and lets a reviewer record a fix (`pdfmend feedback add ...`) into an append-only `corrections.jsonl`, with `feedback stats` grouping the recurring confusions.
 - v0.5.2 keeps two-column rows readable: a horizontal gap wider than `max(1.5×font size, 8pt)` becomes a word break, so a CV row no longer reads `2026.2法学|硕士新南威尔士大学`.
+- v0.6 adds **PDFMend Desktop** (PySide6, Windows x64): drag files in, batch queue, quality cards, Markdown/JSON preview, AI field extraction, and a settings page whose API keys live in the Windows credential manager. The GUI calls the same `services/` layer as the CLI, so scores cannot drift. `pip install "pdfmend[desktop]"` or grab the release ZIP.
 - v0.2 recovers **non-standard layouts**: rule-less tables (whitespace-only columns), multi-column prose read in column order, repeated running heads/footers dropped, and a table split across pages merged back into one (`continued`).
 - It does **not** round-trip back into PDF, guess OCR results silently, or read legacy `.doc/.xls`.
 

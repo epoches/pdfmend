@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pdfmend"
-version = "0.5.2"
+version = "0.6.0"
 description = "PDF/DOCX/PPTX/XLSX to Markdown + Excel, with a confidence report. Chinese-first, local-only."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "pdfmend contributors" }]
-keywords = ["pdf", "markdown", "excel", "table", "ocr", "llm", "rag", "chinese"]
+keywords = ["pdf", "markdown", "excel", "table", "ocr", "llm", "rag", "chinese", "desktop"]
 dependencies = [
   "pdfplumber>=0.11.0",
   "python-docx>=1.1.0",
@@ -30,10 +30,21 @@ ocr = [
   # 3.2.x 既正确又比关掉 mkldnn 快约 3 倍。
   "paddlepaddle>=3.0,<3.3",
 ]
+# 桌面端（Windows 10/11 x64）。GUI 只是外壳，转换仍走同一套引擎。
+desktop = [
+  "PySide6>=6.6",
+  "keyring>=24",
+]
+# 打 Windows 安装包用：pip install -e ".[desktop,build]"
+build = ["pyinstaller>=6.6"]
 # LLM 字段抽取只用标准库（urllib），没有额外依赖，只缺一个环境变量里的 key。
 
 [project.scripts]
 pdfmend = "pdfmend.cli:main"
+pdfmend-desktop = "pdfmend.desktop.app:main"
+
+[project.gui-scripts]
+pdfmend-gui = "pdfmend.desktop.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

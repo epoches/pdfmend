@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.6.0 — 2026-11-17
+
+**PDFMend Desktop**：同一套引擎的 Windows 图形界面（PySide6），免费、MIT、默认本地。
+
+- **服务层**：新增 `services/conversion.py`（`convert_file` → extract/score/render，返回 `ConversionResult`）、`services/batch.py`（`BatchRunner` 队列 + 协作式取消）、`services/ai_extraction.py`（复用 `fields.run`，无 Key 时给明确提示）。CLI 改为调用同一层，输出与退出码不变。
+- **配置**：`config/settings.py` 提供 `Settings`（QSettings / JSON / 内存三种后端，测试用内存）、`output_dir/formats/ocr/theme/provider/model/base_url`、最近文件；API Key 只进系统凭据管理器（`keyring`），不写配置文件、不写日志。
+- **GUI**：首页（拖拽/添加文件夹/最近）、文件转换（队列、格式、输出目录、进度、取消）、结果预览（质量卡、Markdown、报告 JSON、输出文件、AI 字段抽取）、设置（格式/OCR/主题/服务商/模型/Base URL/Key/检查更新）；左侧导航 + 「支持作者」说明页（不做支付、不加权限）。
+- **打包**：`packaging/pdfmend.spec`（PyInstaller onedir，排除 paddle/cv2，标准版体积小）、`build.ps1`（测试 → 打包 → zip → SHA256）、`installer.iss`（Inno Setup）、`.github/workflows/release-windows.yml`（tag 触发打包并挂 Release）。
+- 测试 134 passed：新增 `tests/test_desktop.py`（离屏构建窗口、导航、入队、端到端转换、坏文件、设置保存、打赏弹窗）与 `tests/test_services.py`。
+- 注意：桌面版不含 OCR；需要扫描件识别时 `pip install "pdfmend[ocr]"`，PaddleOCR 的许可证请自行核对后再分发。
+
 ## 0.5.2 — 2026-11-17
 
 - **跨栏同一行的文字不再粘连**：双栏简历里的 `2025.2 - 2026.2法学|硕士新南威尔士大学` 现在输出 `2025.2 - 2026.2 法学|硕士 新南威尔士大学`。`layout._row_text` 改为按 run 之间的真实水平间距判断，间距超过 `max(1.5×字号, 8pt)` 视为栏/单元格间隙并插入词间隔；正常 CJK 字距、连字与西文单词间距不受影响。
