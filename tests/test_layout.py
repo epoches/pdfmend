@@ -168,3 +168,34 @@ def test_table_continued_on_next_page_is_merged(tmp_path: Path) -> None:
     assert table.page == 1 and table.page_end == 2
     assert "continued" in table.flags
     assert table.rows[-1][0] == "Epsilon"
+
+
+def test_wide_gap_between_runs_gets_a_visible_break() -> None:
+    from pdfmend.layout import _gap_text
+
+    # a column gap is not a word space: "2026.2" + "法学" must not fuse
+    assert _gap_text("2026.2", "法学", 60.0, 11.0) == "2026.2 法学"
+    # normal CJK spacing stays untouched
+    assert _gap_text("法学", "硕士", 0.4, 11.0) == "法学硕士"
+
+
+def test_resume_style_row_keeps_date_and_school_apart(tmp_path: Path) -> None:
+    from fpdf import FPDF
+
+    from pdfmend.extract import extract
+
+    path = tmp_path / "resume_row.pdf"
+    pdf = FPDF(format="A4")
+    pdf.add_page()
+    pdf.set_font("helvetica", size=11)
+    pdf.set_xy(15, 30)
+    pdf.cell(50, 8, "2025.2 - 2026.2")
+    pdf.set_xy(120, 30)
+    pdf.cell(60, 8, "Law LLM UNSW")
+    pdf.output(str(path))
+
+    doc = extract(path)
+    text = "\n".join(b.text for b in doc.blocks if b.kind == "para")
+    assert "2026.2" in text and "Law LLM UNSW" in text
+    assert "2026.2Law" not in text
+    assert "2026.2 Law LLM UNSW" in text

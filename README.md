@@ -101,7 +101,7 @@ pdfmend fields 扫描件.pdf --schema s.json --provider qwen --vision  # Qwen3-V
 
 key 的规矩：只从环境变量读（`DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY` / `PDFMEND_LLM_API_KEY`），错误信息里自动打码，`.env` 已加入 `.gitignore`；`tests/test_secrets.py` 会扫全仓库的疑似真 key。示例见 [.env.example](.env.example)。
 
-## V2：长文档分块抽取 + 文档结构（v0.5，可选）
+## V2：长文档分块抽取 + 文档结构（v0.5+，可选）
 
 v0.4 之前 `fields` 只把全文前 12000 字符发给模型，67 页研报里靠后的「研究机构」永远抽不到。v0.5 把这件事拆成三步：**结构识别 → 分块抽取 → 合并补查**。
 
@@ -148,7 +148,7 @@ pdfmend feedback stats                         # 看哪类错误反复出现
 
 ## 安装
 
-还没发 PyPI（v0.5），先源码安装：
+还没发 PyPI（v0.5.2），先源码安装：
 
 ```bash
 git clone https://github.com/epoches/pdfmend.git
@@ -290,6 +290,7 @@ python examples/benchmark_vs_markitdown.py
 - Optional v0.3–v0.4: `pdfmend[ocr]` adds OpenCV cleanup + PaddleOCR for scanned pages; `pdfmend fields` extracts JSON fields with DeepSeek / Qwen-VL (key from env only, `--dry-run` to inspect the payload); `--vision` sends the first pages as images for scans and stamps.
 - v0.5 adds **structure and long documents**: headings, bullet lists, numbered lists and contract clauses are recovered as structure (`pdfmend structure`), long PDFs are chunked page-by-page and merged with per-field evidence and page numbers, and `--profile resume|contract|research_report` ships the field templates in-repo as JSON.
 - v0.5.1 nests `(1)(2)(3)` sub-items under their clause and lets a reviewer record a fix (`pdfmend feedback add ...`) into an append-only `corrections.jsonl`, with `feedback stats` grouping the recurring confusions.
+- v0.5.2 keeps two-column rows readable: a horizontal gap wider than `max(1.5×font size, 8pt)` becomes a word break, so a CV row no longer reads `2026.2法学|硕士新南威尔士大学`.
 - v0.2 recovers **non-standard layouts**: rule-less tables (whitespace-only columns), multi-column prose read in column order, repeated running heads/footers dropped, and a table split across pages merged back into one (`continued`).
 - It does **not** round-trip back into PDF, guess OCR results silently, or read legacy `.doc/.xls`.
 

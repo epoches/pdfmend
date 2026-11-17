@@ -44,11 +44,20 @@ def is_cjk(ch: str) -> bool:
 
 
 def _gap_text(left: str, right: str, gap: float, size: float) -> str:
-    """Join two runs: CJK runs butt together, Latin runs get a space."""
+    """Join two runs: CJK runs butt together, Latin runs get a space.
+
+    A wide gap is different from a word space: resumes put the date in one
+    column and the school in the next, and gluing them gives "2026.2法学" --
+    readable only by guessing.  Such gaps become a real word break.  (The
+    text pass later collapses runs of whitespace, so one space is what
+    survives in the document model.)
+    """
     if not left:
         return right
     if not right:
         return left
+    if gap > max(1.5 * size, 8.0):
+        return left + " " + right
     if is_cjk(left[-1]) or is_cjk(right[0]):
         return left + right
     return left + (" " if gap > 0.15 * size else "") + right
@@ -315,8 +324,11 @@ def reading_columns(rows_: list[Row], page_width: float) -> list[list[Row]]:
 def _row_text(row: Row) -> str:
     size = _median([c.get("size") or 10 for c in row.chars])
     text = ""
+    prev_x1 = None
     for run in row.runs:
-        text = _gap_text(text, run.text, 0.0, size)
+        gap = (run.x0 - prev_x1) if prev_x1 is not None else 0.0
+        text = _gap_text(text, run.text, gap, size)
+        prev_x1 = run.x1
     return text
 
 
