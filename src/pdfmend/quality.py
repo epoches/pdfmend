@@ -138,6 +138,15 @@ def score_table(table: Table) -> None:
 
     conf = 0.45 * fill + 0.25 * (1 - ragged_ratio) + 0.20 * type_consistency + 0.10 * header
 
+    # A cell whose text wrapped inside the PDF often comes out as *extra rows*
+    # with most cells blank. The table still looks fine on paper, so say so
+    # instead of pretending the row count is right.
+    body_rows = rows[start:]
+    sparse = sum(
+        1 for r in body_rows if sum(1 for c in r if c.strip() not in EMPTYISH) <= max(1, n_cols - 2)
+    )
+    sparse_ratio = sparse / max(1, len(body_rows))
+
     if n_cols <= 1 and n_rows >= 3:
         flags.append("collapsed_single_column")
         conf = min(conf, 0.30)
@@ -148,6 +157,9 @@ def score_table(table: Table) -> None:
         flags.append("empty_cells")
     if mixed_cols:
         flags.append("mixed_types")
+    if n_cols >= 3 and sparse_ratio > 0.30:
+        flags.append("sparse_rows")
+        conf -= 0.08
     if dup_ratio > 0.20:
         flags.append("merged_cells_suspected")
         conf -= 0.10
@@ -184,6 +196,11 @@ def score_document(doc: Document) -> Report:
         weak = [t for t in doc.tables if t.confidence < 0.6]
         if weak:
             reasons.append(f"{len(weak)}/{len(doc.tables)} 张表置信度低于 0.6，建议人工抽查")
+        sparse = [t for t in doc.tables if "sparse_rows" in t.flags]
+        if sparse:
+            reasons.append(
+                f"{len(sparse)} 张表有大量空白格（单元格换行或纵向合并被拆开），建议对照原文件抽查"
+            )
         score = 100 * (0.75 * table_score + 0.25 * text_health)
     else:
         if doc.text_chars == 0:
