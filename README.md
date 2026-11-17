@@ -322,7 +322,7 @@ v0.5 起文档分是六个可测维度（不可测的维度会丢弃，剩下的
 
 ```bash
 pip install -e ".[dev]"
-pytest                     # 153 个测试，含真实 PDF/DOCX/XLSX 夹具与离屏 GUI 测试
+pytest                     # 154 个测试，含真实 PDF/DOCX/XLSX 夹具与离屏 GUI 测试
 pip install -e ".[dev,desktop]"   # 桌面版：额外装 PySide6 + keyring
 python examples/make_demo.py
 python examples/make_messy.py
