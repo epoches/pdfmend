@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pdfmend"
-version = "0.2.0"
+version = "0.3.0"
 description = "PDF/DOCX/PPTX/XLSX to Markdown + Excel, with a confidence report. Chinese-first, local-only."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,6 +21,14 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "fpdf2>=2.7"]
+# 扫描件：图像预处理 + OCR。重（paddlepaddle 约 100 MB），按需安装。
+ocr = [
+  "opencv-python-headless>=4.9",
+  "numpy>=1.24",
+  "paddleocr>=2.7",
+  "paddlepaddle>=2.6",
+]
+# LLM 字段抽取只用标准库（urllib），没有额外依赖，只缺一个环境变量里的 key。
 
 [project.scripts]
 pdfmend = "pdfmend.cli:main"

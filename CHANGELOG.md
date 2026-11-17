@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0 — 2026-11-17
+
+扫描件与字段抽取，均为**可选**能力，默认安装仍纯本地：
+
+- **图像预处理**（`src/pdfmend/preprocess.py`，需 `pdfmend[ocr]`）：non-local means 去噪、投影法纠偏（±10°）、CLAHE + 轻锐化增强；`prepare()` 返回实际执行了哪几步。
+- **OCR**（`src/pdfmend/ocr.py`，PaddleOCR）：兼容 2.x / 3.x 两种返回结构；行按几何合成段落，中文不加空格、英文按词加空格、行尾连字符去掉；“手写”由所选 PaddleOCR 模型决定。
+- **接入提取流程**：`extract(path, ocr="auto"|"always"|"never")`；只对无文本层页面识别，识别页记入 `meta["ocr_pages"]`、预处理步骤记入 `meta["ocr_steps"]`，失败不致命（`meta["ocr_errors"]`），报告里点名要求核对数字。
+- **`pdfmend fields`**（`src/pdfmend/llm.py` + `fields.py`）：OpenAI 兼容协议，DeepSeek（`deepseek-chat`）或 Qwen3-VL（`qwen3-vl-plus`）；`--schema` 定义字段，输出 `<文件名>.fields.json`；`--dry-run` 只打印将发送的 prompt。
+- **key 只从环境变量读**：`DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY` / `PDFMEND_LLM_API_KEY`，错误信息里自动打码，`.env` 进 `.gitignore`，新增 `.env.example` 与 `tests/test_secrets.py`（扫仓库疑似真 key）。
+- `batch` 与 `check` 新增 `--ocr`；报告新增“由 OCR 识别”原因行；扫描件提示改为“安装 pdfmend[ocr] 后加 --ocr auto 可识别”。
+- 测试 67 个（新增 `test_llm.py` / `test_ocr.py` / `test_ocr_pipeline.py` / `test_fields.py` / `test_preprocess.py` / `test_secrets.py`）。
+
 ## 0.2.0 — 2026-11-17
 
 版面重建层，专治“非标 PDF”（`src/pdfmend/layout.py`）：

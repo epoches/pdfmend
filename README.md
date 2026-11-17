@@ -60,9 +60,40 @@ v0.2 的做法是绕开 PDF 自带的文字流，直接按字符坐标重建版�
 
 ---
 
+## 扫描件与 AI（v0.3，都是可选的）
+
+默认安装依然纯本地、零网络。下面两块要显式开启，不装也能正常转文字版 PDF。
+
+### 扫描件：OpenCV 预处理 + PaddleOCR
+
+```bash
+pip install "pdfmend[ocr]"
+pdfmend 扫描件.pdf --ocr auto      # 只对没有文本层的页做 OCR（默认）
+pdfmend 扫描件.pdf --ocr always    # 扫描页必须识别，失败就报错退出
+```
+
+流程：200dpi 渲染 → 去噪（non-local means）→ 纠偏（投影法找 ±10° 内的倾斜）→ CLAHE 增强 → PaddleOCR（中文/英文/手写）。识别出的行按坐标合成段落、按阅读顺序插入原文位置，报告里会写「第 N 页由 OCR 识别（扫描/手写），数字与专有名词请核对」。
+
+没装 `pdfmend[ocr]` 时 `--ocr auto` 不报错，只是继续老实说「该页没有文本层」——不会假装识别过。
+
+### 复杂字段：`pdfmend fields`（DeepSeek / Qwen3-VL）
+
+```bash
+export DEEPSEEK_API_KEY=sk-...          # 只放环境变量
+pdfmend fields 合同.pdf --schema examples/schema.example.json
+pdfmend fields 合同.pdf --schema s.json --dry-run        # 只打印将发送的内容
+pdfmend fields 扫描件.pdf --schema s.json --provider qwen  # Qwen3-VL 读页面图
+```
+
+输出 `<文件名>.fields.json`（`fields` + `provider` + `model`，不含 key）。
+
+隐私：这一步会把提取到的文本发给所选服务商。含身份证号、银行账号的文件请先脱敏，或把 `PDFMEND_LLM_BASE_URL` 指向自建服务。`--dry-run` 可以先看清到底发了什么。
+
+key 的规矩：只从环境变量读（`DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY` / `PDFMEND_LLM_API_KEY`），错误信息里自动打码，`.env` 已加入 `.gitignore`；`tests/test_secrets.py` 会扫全仓库的疑似真 key。示例见 [.env.example](.env.example)。
+
 ## 安装
 
-还没发 PyPI（v0.2），先源码安装：
+还没发 PyPI（v0.3），先源码安装：
 
 ```bash
 git clone https://github.com/epoches/pdfmend.git
@@ -72,7 +103,7 @@ python -m venv .venv
 pip install -e .
 ```
 
-要求 Python ≥ 3.10。依赖只有 `pdfplumber`、`python-docx`、`openpyxl`、`python-pptx`，没有云端调用。
+要求 Python ≥ 3.10。默认依赖只有 `pdfplumber`、`python-docx`、`openpyxl`、`python-pptx`，没有云端调用。`pip install "pdfmend[ocr]"` 才装 OpenCV/PaddleOCR；`pdfmend fields` 只用标准库 + 环境变量里的 key。
 
 ## 用法
 
@@ -155,7 +186,8 @@ confidence = 0.45 × 填充率
 
 ## 明确不做的事
 
-- **不做 OCR。** 扫描件/图片页会检测出来并点名页码，然后停在这里。
+- **不默认做 OCR。** 默认安装不碰 OCR；扫描件/图片页会检测出来并点名页码。装了 `pdfmend[ocr]` 并加 `--ocr auto` 才识别，且结果标注来源。
+- **不默认联网。** `pdfmend fields` 是唯一会外发内容的命令，必须自己配 key、自己调用；`--dry-run` 可先审阅。
 - **不做回填。** 不会把改好的 Excel 塞回 PDF（这是 `docs/why.md` 里记录的下一个真实需求）。
 - **不碰 .doc / .xls 老格式。** 只支持 .docx / .xlsx / .pptx / .pdf。
 - **不保证 100% 还原。** 跨页表会自动合并并标 continued；嵌套表、印章盖住表格仍会尽力转并标出来。
@@ -164,7 +196,7 @@ confidence = 0.45 × 填充率
 
 | 格式 | 文本 | 表格 | 已知限制 |
 |---|---|---|---|
-| `.pdf` | ✅ | ✅ lines + cluster + text 三策略 | 无文本层的页报出来；无框线表靠坐标聚类；识别不到时退化为文本 |
+| `.pdf` | ✅ | ✅ lines + cluster + text 三策略 | 无文本层的页报出来；装 `[ocr]` 后可识别；无框线表靠坐标聚类；识别不到时退化为文本 |
 | `.docx` | ✅ | ✅ 按正文顺序 | 合并单元格保留内容、不重复；复杂嵌套表按外层处理 |
 | `.xlsx` | — | ✅ 每个 sheet 一张表 | `read_only` 模式，单表最多 500 行 |
 | `.pptx` | ✅ | ✅ | 图表/图片里的文字不提取 |
@@ -187,10 +219,11 @@ python examples/benchmark_vs_markitdown.py
 
 - Tables stay tables (Markdown grid or Excel sheet), not paragraphs.
 - Every table gets a confidence score; scanned pages, mojibake and suspected merged cells are flagged instead of silently dropped.
-- Local-only: files never leave your machine. No API keys, no upload.
 - Chinese-first: two-level headers, CJK text, and `1,234,500.00` are first-class cases.
+- Local by default: files never leave your machine, no API keys needed.
+- Optional v0.3: `pdfmend[ocr]` adds OpenCV cleanup + PaddleOCR for scanned pages; `pdfmend fields` extracts JSON fields with DeepSeek / Qwen-VL (key from env only, `--dry-run` to inspect the payload).
 - v0.2 recovers **non-standard layouts**: rule-less tables (whitespace-only columns), multi-column prose read in column order, repeated running heads/footers dropped, and a table split across pages merged back into one (`continued`).
-- v0.2 does **not** do OCR, round-tripping back into PDF, or legacy `.doc/.xls`.
+- It does **not** round-trip back into PDF, guess OCR results silently, or read legacy `.doc/.xls`.
 
 ```bash
 pip install -e .

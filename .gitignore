@@ -17,3 +17,10 @@ examples/out/
 
 # Local scratch
 tmp/
+
+# Secrets — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key

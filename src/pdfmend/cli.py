@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
-from pdfmend import __version__
+from pdfmend import __version__, fields, llm
 from pdfmend.extract import extract
 from pdfmend.quality import score_document
 from pdfmend.render import to_json, to_markdown, to_xlsx, write_html
@@ -44,8 +45,8 @@ def _bar(score: int, width: int = 20) -> str:
     return "[" + "#" * filled + "." * (width - filled) + "]"
 
 
-def _convert_one(src: Path, outdir: Path, formats: set[str], quiet: bool) -> int:
-    doc = extract(src)
+def _convert_one(src: Path, outdir: Path, formats: set[str], quiet: bool, ocr: str = "never") -> int:
+    doc = extract(src, ocr=ocr)
     report = score_document(doc)
     outdir.mkdir(parents=True, exist_ok=True)
     stem = src.stem
@@ -73,6 +74,11 @@ def _convert_one(src: Path, outdir: Path, formats: set[str], quiet: bool) -> int
             _p(f"  - table {t.id:<4} {where} {t.shape:>8}  conf {t.confidence:.2f}{flag}")
         for r in report.reasons:
             _p(f"  · {r}")
+        steps = list(dict.fromkeys(doc.meta.get("ocr_steps") or []))
+        if steps:
+            _p(f"  · 图像预处理：{', '.join(steps)}")
+        for err in doc.meta.get("ocr_errors") or []:
+            _p(f"  ! OCR {err}")
         if written:
             _p(f"  -> {', '.join(written)}")
         _p()
@@ -101,7 +107,13 @@ def cmd_convert(args: argparse.Namespace) -> int:
     scores = []
     for src in files:
         try:
-            score = _convert_one(src, Path(args.outdir) if args.outdir else src.parent, formats, args.quiet)
+            score = _convert_one(
+                src,
+                Path(args.outdir) if args.outdir else src.parent,
+                formats,
+                args.quiet,
+                ocr=args.ocr,
+            )
             scores.append(score)
         except Exception as e:  # noqa: BLE001 - one bad file must not kill the batch
             _p(f"{src.name}: 失败 — {type(e).__name__}: {e}")
@@ -116,7 +128,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     worst = 100
     for src in srcs:
         try:
-            report = score_document(extract(src))
+            report = score_document(extract(src, ocr=args.ocr))
         except Exception as e:  # noqa: BLE001
             _p(f"{src.name}: 失败 — {type(e).__name__}: {e}")
             worst = 0
@@ -126,6 +138,39 @@ def cmd_check(args: argparse.Namespace) -> int:
         for r in report.reasons:
             _p(f"  · {r}")
     return 0 if worst >= 60 else 2
+
+
+def cmd_fields(args: argparse.Namespace) -> int:
+    src = Path(args.input)
+    if not src.is_file():
+        _p(f"找不到文件：{src}")
+        return 1
+    try:
+        messages = fields.build_messages(src, fields.load_schema(Path(args.schema)), ocr=args.ocr)
+    except (ValueError, OSError) as exc:
+        _p(f"失败：{exc}")
+        return 2
+    if args.dry_run:
+        _p(json.dumps(messages, ensure_ascii=False, indent=2)[:4000])
+        _p("（dry-run：没有调用 API，也没有读取任何 key）")
+        return 0
+    try:
+        target = fields.run(
+            src,
+            Path(args.schema),
+            out=Path(args.out) if args.out else None,
+            provider=args.provider,
+            model=args.model,
+            ocr=args.ocr,
+        )
+    except (llm.LLMError, ValueError, OSError) as exc:
+        _p(f"失败：{exc}")
+        return 2
+    cfg = llm.config_from_env(args.provider, args.model)
+    _p(f"{src.name} -> {target.name}")
+    _p(f"  · {cfg.describe()}")
+    _p("  · 字段由模型生成，金额与日期请对照原件核验")
+    return 0
 
 
 def cmd_version(_: argparse.Namespace) -> int:
@@ -147,11 +192,28 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("-f", "--format", default=DEFAULT_FORMATS, help=f"逗号分隔，可选 {','.join(FORMATS)}")
     c.add_argument("-q", "--quiet", action="store_true")
     c.add_argument("--strict", type=int, metavar="N", help="质量分低于 N 时返回退出码 2")
+    c.add_argument(
+        "--ocr",
+        choices=("auto", "always", "never"),
+        default="auto",
+        help="扫描页处理：auto=有文本层就跳过，always=扫描页必须 OCR（失败报错），never=不碰 OCR",
+    )
     c.set_defaults(func=cmd_convert)
 
     k = sub.add_parser("check", aliases=["k"], help="只体检，不写文件")
     k.add_argument("input", nargs="+")
+    k.add_argument("--ocr", choices=("auto", "always", "never"), default="auto")
     k.set_defaults(func=cmd_check)
+
+    f = sub.add_parser("fields", help="用 LLM 把文档抽成 JSON 字段（需要 API key）")
+    f.add_argument("input", help="文件（.pdf .docx .xlsx .pptx）")
+    f.add_argument("--schema", required=True, help="JSON schema 文件，键=字段名")
+    f.add_argument("--provider", choices=("deepseek", "qwen", "openai"), help="默认 deepseek")
+    f.add_argument("--model", help="覆盖模型名")
+    f.add_argument("--ocr", choices=("auto", "always", "never"), default="auto")
+    f.add_argument("-o", "--out", help="输出路径（默认 <文件名>.fields.json）")
+    f.add_argument("--dry-run", action="store_true", help="只打印将要发送的内容，不调用 API")
+    f.set_defaults(func=cmd_fields)
 
     v = sub.add_parser("version", help="显示版本")
     v.set_defaults(func=cmd_version)
@@ -165,7 +227,9 @@ def main(argv: list[str] | None = None) -> int:
     if not argv:
         parser.print_help()
         return 0
-    if argv[0] not in ("convert", "c", "check", "k", "version", "-V", "--version", "-h", "--help"):
+    if argv[0] not in (
+        "convert", "c", "check", "k", "fields", "version", "-V", "--version", "-h", "--help"
+    ):
         argv = ["convert", *argv]
     args = parser.parse_args(argv)
     return args.func(args)

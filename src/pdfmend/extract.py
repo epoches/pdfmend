@@ -245,7 +245,30 @@ def _merge_continued(pages: list[dict]) -> set[str]:
     return merged
 
 
-def _pdf(path: Path) -> Document:
+def _ocr_paragraphs(page, page_no: int, doc: Document, dpi: int = 200) -> list[dict] | None:
+    """Render one page and read it with PaddleOCR; None means "not available"."""
+    from . import ocr as ocr_mod
+    from . import preprocess
+
+    if not ocr_mod.available():
+        return None
+    try:
+        image = page.to_image(resolution=dpi).original
+        cleaned, info = preprocess.prepare(image)
+        paras = ocr_mod.to_paragraphs(ocr_mod.ocr_image(cleaned))
+    except Exception as exc:  # optional stack: never take the whole run down
+        doc.meta.setdefault("ocr_errors", []).append(f"page {page_no}: {exc}")
+        return None
+    # OCR coordinates are pixels; convert to PDF points so blocks sort correctly.
+    scale = (page.height or 1.0) / max(1, cleaned.height)
+    for para in paras:
+        para["top"] = para["top"] * scale
+    doc.meta.setdefault("ocr_pages", []).append(page_no)
+    doc.meta.setdefault("ocr_steps", []).extend(info.get("steps") or [])
+    return paras
+
+
+def _pdf(path: Path, ocr: str = "never") -> Document:
     import pdfplumber
 
     from . import layout
@@ -262,6 +285,16 @@ def _pdf(path: Path) -> Document:
             boxes = [t.bbox for t in tables if t.bbox]
             body_chars = [c for c in chars if not _inside_boxes(c, boxes)]
             paras = layout.body_blocks(body_chars, page.width or 1.0)
+            if len(chars) < 10 and ocr in ("auto", "always"):
+                read = _ocr_paragraphs(page, page_no, doc)
+                if read:
+                    paras = read
+                    if page_no in doc.scanned_pages:
+                        doc.scanned_pages.remove(page_no)
+                elif ocr == "always":
+                    doc.meta.setdefault("ocr_errors", []).append(
+                        f"page {page_no}: OCR 不可用（安装 pdfmend[ocr] 后重试）"
+                    )
             pages.append(
                 {
                     "no": page_no,
@@ -415,10 +448,12 @@ def _pptx(path: Path) -> Document:
 EXTRACTORS = {".pdf": _pdf, ".docx": _docx, ".xlsx": _xlsx, ".pptx": _pptx}
 
 
-def extract(path: Path) -> Document:
+def extract(path: Path, ocr: str = "never") -> Document:
     suffix = path.suffix.lower()
     if suffix not in EXTRACTORS:
         raise ValueError(f"unsupported file type: {suffix} (支持 .pdf .docx .xlsx .pptx)")
-    doc = EXTRACTORS[suffix](path)
+    if ocr not in ("auto", "always", "never"):
+        raise ValueError(f"ocr must be auto/always/never, got {ocr!r}")
+    doc = _pdf(path, ocr=ocr) if suffix == ".pdf" else EXTRACTORS[suffix](path)
     doc.meta["source_bytes"] = path.stat().st_size
     return doc

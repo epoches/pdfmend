@@ -188,7 +188,15 @@ def score_document(doc: Document) -> Report:
     if doc.scanned_pages:
         shown = ", ".join(str(p) for p in doc.scanned_pages[:8])
         more = "..." if len(doc.scanned_pages) > 8 else ""
-        reasons.append(f"第 {shown}{more} 页没有文本层（扫描件），当前不做 OCR")
+        reasons.append(
+            f"第 {shown}{more} 页没有文本层（扫描件）：安装 pdfmend[ocr] 后加 --ocr auto 可识别"
+        )
+    ocr_pages = list(doc.meta.get("ocr_pages") or [])
+    if ocr_pages:
+        shown = ", ".join(str(p) for p in ocr_pages[:8])
+        more = "..." if len(ocr_pages) > 8 else ""
+        reasons.append(f"第 {shown}{more} 页由 OCR 识别（扫描/手写），数字与专有名词请核对")
+        text_health = max(0.0, text_health - 0.2 * len(ocr_pages) / max(1, doc.pages))
 
     if doc.tables:
         weight = sum(max(1, t.n_rows) for t in doc.tables)
