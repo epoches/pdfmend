@@ -10,12 +10,22 @@ without it.
 
 from __future__ import annotations
 
-import numpy as np
+try:  # numpy ships with the ocr extra; keep the module importable without it
+    import numpy as np
+except ImportError:  # pragma: no cover - depends on install
+    np = None  # type: ignore[assignment]
+
 from PIL import Image
 
 
 class DependencyError(RuntimeError):
     """Optional imaging stack is missing."""
+
+
+def _np():
+    if np is None:
+        raise DependencyError('图像预处理需要 numpy：pip install "pdfmend[ocr]"')
+    return np
 
 
 def _cv2():
@@ -29,6 +39,7 @@ def _cv2():
 
 
 def to_rgb(image: Image.Image) -> np.ndarray:
+    _np()
     return np.asarray(image.convert("RGB"))
 
 
@@ -46,6 +57,7 @@ def estimate_skew(image: Image.Image, max_angle: float = 10.0, step: float = 0.2
     rotate clockwise.
     """
     cv2 = _cv2()
+    _np()
     gray = _gray(image)
     h, w = gray.shape[:2]
     if h == 0 or w == 0:
@@ -72,6 +84,7 @@ def estimate_skew(image: Image.Image, max_angle: float = 10.0, step: float = 0.2
 def rotate(image: Image.Image, angle: float) -> Image.Image:
     """Rotate around the centre and grow the canvas so nothing is clipped."""
     cv2 = _cv2()
+    _np()
     if abs(angle) < 1e-6:
         return image
     gray = _gray(image)
@@ -91,6 +104,7 @@ def rotate(image: Image.Image, angle: float) -> Image.Image:
 def denoise(image: Image.Image, strength: float = 7.0) -> Image.Image:
     """Non-local means: removes sensor grain without eating thin strokes."""
     cv2 = _cv2()
+    _np()
     gray = _gray(image)
     out = cv2.fastNlMeansDenoising(
         gray, None, h=float(strength), templateWindowSize=7, searchWindowSize=21
@@ -101,6 +115,7 @@ def denoise(image: Image.Image, strength: float = 7.0) -> Image.Image:
 def enhance(image: Image.Image, clip: float = 2.0) -> Image.Image:
     """CLAHE for uneven lighting, then a light unsharp mask."""
     cv2 = _cv2()
+    _np()
     gray = _gray(image)
     clahe = cv2.createCLAHE(clipLimit=float(clip), tileGridSize=(8, 8))
     equalised = clahe.apply(gray)

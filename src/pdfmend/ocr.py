@@ -15,7 +15,6 @@ import contextlib
 import os
 from dataclasses import dataclass
 
-import numpy as np
 from PIL import Image
 
 
@@ -145,19 +144,32 @@ def _engine(lang: str = "ch"):
 
 
 def _line_from_points(points, text: str, conf: float) -> Line:
-    box = np.asarray(points, dtype=float).reshape(-1, 2)
-    top = float(box[:, 1].min())
-    left = float(box[:, 0].min())
-    bottom = float(box[:, 1].max())
-    return Line(str(text), float(conf), top, left, max(0.0, bottom - top))
+    """Works for a 4-point polygon or a flat [x1, y1, x2, y2] box, without numpy."""
+    flat: list[float] = []
+    for point in points:
+        try:
+            if isinstance(point, (int, float)):
+                flat.append(float(point))
+            else:
+                flat.extend(float(value) for value in point[:2])
+        except (TypeError, ValueError, IndexError):
+            continue
+    xs, ys = flat[0::2], flat[1::2]
+    if not xs or not ys:
+        return Line(str(text), float(conf))
+    top, left = min(ys), min(xs)
+    return Line(str(text), float(conf), top, left, max(0.0, max(ys) - top))
 
 
 def _is_entry(obj) -> bool:
     """2.x entry: [four_points, (text, score)]."""
+    first = obj[0] if isinstance(obj, (list, tuple)) and len(obj) == 2 else None
     return (
         isinstance(obj, (list, tuple))
         and len(obj) == 2
-        and isinstance(obj[0], (list, tuple, np.ndarray))
+        and first is not None
+        and hasattr(first, "__len__")
+        and not isinstance(first, str)
         and isinstance(obj[1], (list, tuple))
         and len(obj[1]) == 2
         and isinstance(obj[1][0], str)
@@ -206,6 +218,10 @@ def parse_result(raw) -> list[Line]:
 
 def ocr_image(image: Image.Image, lang: str = "ch") -> list[Line]:
     """Run OCR on a PIL image; returns lines with pixel coordinates."""
+    try:
+        import numpy as np  # only needed once we actually call paddle
+    except ImportError as exc:  # pragma: no cover - ocr extra always ships numpy
+        raise OcrUnavailable('图像预处理需要 numpy：pip install "pdfmend[ocr]"') from exc
     engine = _engine(lang)
     array = np.asarray(image.convert("RGB"))
     with _quiet():
