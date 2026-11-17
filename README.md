@@ -91,7 +91,9 @@ pdfmend fields 合同.pdf --schema s.json --dry-run        # 只打印将发送�
 pdfmend fields 扫描件.pdf --schema s.json --provider qwen --vision  # Qwen3-VL 直接看页面图
 ```
 
-`--vision` 把前 3 页渲染成 PNG 一起发过去（每页约 30–60 KB base64）；扫描件、印章、手写、表格歪斜这类「文字抽不干净」的情况，视觉模型通常比纯文本可靠。代价是三件事：要选支持视觉的模型（`qwen3-vl-plus`、`gpt-4o-mini`），发送体积变大，隐私暴露面也从文字扩大到整页图片——身份证、银行卡那种页面别开。
+`--vision` 把前 3 页渲染成 PNG 一起发过去（每页约 30–60 KB base64）；扫描件、印章、手写、表格歪斜这类「文字抽不干净」的情况，视觉模型通常比纯文本可靠。代价是三件事：要选支持视觉的模型（`qwen3-vl-plus`、`gpt-4o-mini`，`deepseek-chat` 实测也能读图）、发送体积变大、隐私暴露面从文字扩大到整页图片——身份证、银行卡那种页面别开。
+
+`--vision` 的 token 比想象中便宜：2026-11-17 实测，一张 A4 页面图约 1000 tokens，一张 420×160 的纯图约 200 tokens（deepseek-chat，同一张图里随机 4 位数字两次都读对了，说明不是「假装看见」）。
 
 输出 `<文件名>.fields.json`（`file` / `provider` / `model` / `vision` / `fields`，不含 key）。
 
