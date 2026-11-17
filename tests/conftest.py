@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import io
 import os
+from functools import lru_cache
 from pathlib import Path
 
 import pytest
@@ -16,12 +18,37 @@ FONT_CANDIDATES = [
 ]
 
 
+@lru_cache(maxsize=None)
+def _embeds_readable_text(font: Path) -> bool:
+    """A font is only usable here if fpdf2 can embed it *and* pdfminer can read it back.
+
+    Some Linux CJK fonts are CFF-flavoured collections (.ttc/.otf); fpdf2 embeds
+    them, but the resulting PDF yields no extractable characters, which would make
+    every PDF test look like a scanned document. Probe instead of guessing.
+    """
+    try:
+        from fpdf import FPDF
+
+        import pdfplumber
+
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.add_font("probe", "", str(font))
+        pdf.set_font("probe", size=12)
+        pdf.cell(0, 8, "中文")
+        buf = io.BytesIO(bytes(pdf.output()))
+        with pdfplumber.open(buf) as doc:
+            return "中文" in (doc.pages[0].extract_text() or "")
+    except Exception:
+        return False
+
+
 @pytest.fixture(scope="session")
 def cjk_font() -> Path | None:
     if os.environ.get("PDFMEND_NO_CJK_FONT"):
         return None
     for p in FONT_CANDIDATES:
-        if p.exists():
+        if p.exists() and _embeds_readable_text(p):
             return p
     return None
 
