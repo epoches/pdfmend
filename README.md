@@ -107,13 +107,27 @@ v0.4 之前 `fields` 只把全文前 12000 字符发给模型，67 页研报里�
 
 ```bash
 pdfmend structure 合同.pdf                     # 看结构：标题/段落/项目符号/条款/表格
-pdfmend structure 合同.pdf --json              # 结构树 JSON（Markdown/HTML/JSON 同源）
+pdfmend structure 合同.pdf --json -o doc.json  # 结构树 JSON（Markdown/HTML/JSON 同源，块带 id）
 pdfmend fields 合同.pdf --profile contract      # 用内置模板（resume/contract/research_report/default）
 pdfmend fields 研报.pdf --profile research_report
 pdfmend fields 研报.pdf --profile research_report --no-chunk   # 退回整篇一次（调试用）
+pdfmend feedback add --structure doc.json --block b15 --to clause --note "两条并成一段了"
+pdfmend feedback stats                         # 看哪类错误反复出现
 ```
 
 **结构识别**（规则 + 坐标，不靠大模型）：标题层级（字号比 + 第X章/节/条 + 一、）、项目符号（包括符号单独占一块、缩进连续、同行多个符号）、有序列表、条款 `1.1`、多栏阅读顺序、页眉页脚剔除。扫描页走 PaddleOCR 的框坐标，走同一套规则。
+
+条款里的 `（1）（2）（3）` 现在会挂到所属条款下，Markdown 渲染成缩进子列表：
+
+```
+- 1.2 服务内容包括：
+  - （1）系统架构设计；
+  - （2）数据库设计；
+```
+
+只有一个括号（如「详见附件（1）」）不会被当成列表；没有上级条款的 `（1）` 仍按有序列表处理。
+
+**人工纠错**（P2）：规则再全也有长尾。`pdfmend feedback add` 把「某个块本应是 X」记进 `corrections.jsonl`（一行一条，含文档、页码、块 id、原文、备注），`stats` 按 `原类型 → 新类型` 汇总。目前用来找反复出错的模式和攒回归样例，**不训练模型**；文件是追加写，不覆盖历史。
 
 **分块抽取**：按页对齐切块（默认目标 6500 字符、上限 8000），块间重叠只作为「上文参考」不计入本块；每块单独调用模型，要求返回 `value / evidence / source_page / confidence`。
 
@@ -130,7 +144,7 @@ pdfmend fields 研报.pdf --profile research_report --no-chunk   # 退回整篇�
 }
 ```
 
-边界：证据由模型给出，可能张冠李戴，金额、日期、甲乙方务必对照原件；`（1）（2）（3）` 这类子列表目前并进条款正文，没有拆成嵌套列表；扫描件的表格仍然只出文字行。
+边界：证据由模型给出，可能张冠李戴，金额、日期、甲乙方务必对照原件；扫描件的表格仍然只出文字行。
 
 ## 安装
 
@@ -255,7 +269,7 @@ v0.5 起文档分是六个可测维度（不可测的维度会丢弃，剩下的
 
 ```bash
 pip install -e ".[dev]"
-pytest                     # 102 个测试，含真实 PDF/DOCX/XLSX 夹具
+pytest                     # 112 个测试，含真实 PDF/DOCX/XLSX 夹具
 python examples/make_demo.py
 python examples/make_messy.py
 python examples/make_scan.py       # 合成扫描件，验证 OCR/--vision
@@ -275,6 +289,7 @@ python examples/benchmark_vs_markitdown.py
 - Local by default: files never leave your machine, no API keys needed.
 - Optional v0.3–v0.4: `pdfmend[ocr]` adds OpenCV cleanup + PaddleOCR for scanned pages; `pdfmend fields` extracts JSON fields with DeepSeek / Qwen-VL (key from env only, `--dry-run` to inspect the payload); `--vision` sends the first pages as images for scans and stamps.
 - v0.5 adds **structure and long documents**: headings, bullet lists, numbered lists and contract clauses are recovered as structure (`pdfmend structure`), long PDFs are chunked page-by-page and merged with per-field evidence and page numbers, and `--profile resume|contract|research_report` ships the field templates in-repo as JSON.
+- v0.5.1 nests `(1)(2)(3)` sub-items under their clause and lets a reviewer record a fix (`pdfmend feedback add ...`) into an append-only `corrections.jsonl`, with `feedback stats` grouping the recurring confusions.
 - v0.2 recovers **non-standard layouts**: rule-less tables (whitespace-only columns), multi-column prose read in column order, repeated running heads/footers dropped, and a table split across pages merged back into one (`continued`).
 - It does **not** round-trip back into PDF, guess OCR results silently, or read legacy `.doc/.xls`.
 

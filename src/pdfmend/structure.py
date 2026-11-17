@@ -30,13 +30,16 @@ SECTION_RE = re.compile(r"^\s*第[一二三四五六七八九十百零\d]+节\s*
 ARTICLE_RE = re.compile(r"^\s*第[一二三四五六七八九十百零\d]+条")
 QUOTE_RE = re.compile(r"^\s*(?:>|“|「)")
 SENTENCE_END = re.compile(r"[。！？；：.!?;:]\s*$")
-NUMERIC_LINE = re.compile(r"^[\d\s.,:：/%-]+$")
-# A clause or chapter marker used to cut a paragraph that swallowed several of them.
+NUMERIC_LINE = re.compile(r"^[\d\s.,:：/%-]+$")# A clause or chapter marker used to cut a paragraph that swallowed several of them.
 SECTION_MARK_RE = re.compile(
     r"(?:第[一二三四五六七八九十百零\d]+[条章节编])"
     r"|(?<![\d.])(?:\d{1,2}\.\d{1,2}(?:\.\d{1,2})*)(?=[\u4e00-\u9fff（(])"
     r"|(?<![\d.])(?:\d{1,3}[.、])(?=[\u4e00-\u9fff])"
 )
+
+# Sub-items inside a clause: "（1）系统架构设计" / "① 数据库设计".
+SUBITEM_RE = re.compile(r"^\s*(?:[（(]\s*[0-9]{1,2}\s*[）)]|[①②③④⑤⑥⑦⑧⑨⑩])\s*(.*)$")
+SUBITEM_MARK_RE = re.compile(r"(?:[（(]\s*[0-9]{1,2}\s*[）)]|[①②③④⑤⑥⑦⑧⑨⑩])")
 
 
 def clean(text: str) -> str:
@@ -101,6 +104,10 @@ def heading_level(text: str, size: float = 0.0, body_size: float = 0.0) -> int:
     t = clean(text)
     if not t or len(t) > 60:
         return 0
+    # "年龄：23岁 电话：138…" is a label line, not a section title; a heading
+    # that carries a number and a colon is almost always data.
+    if ("：" in t or ":" in t) and re.search(r"[\d@]", t):
+        return 0
     if size and body_size and body_size > 0:
         ratio = size / body_size
         if ratio >= 1.6:
@@ -157,6 +164,50 @@ def split_inline_sections(text: str) -> list[str]:
         if len(piece) >= 3:
             pieces.append(piece)
     return pieces
+
+
+def subitem_line(text: str) -> str | None:
+    """Return the normalised text when a whole line is a sub-item, else None."""
+    if not SUBITEM_RE.match(text or ""):
+        return None
+    item = clean(text)
+    return item or None
+
+
+def split_subitems(text: str) -> tuple[str, list[str]]:
+    """Cut a clause body into its lead-in and the ``（1）（2）`` items inside it.
+
+    Contract clauses usually look like
+
+        1.2 乙方向甲方提供以下服务：（1）系统架构设计（2）数据库设计
+
+    One paragraph, three logical pieces.  Keeping the enumeration as plain
+    text inside ``text`` loses the nesting; splitting on the markers restores
+    it.  A single parentheses pair ("（详见附件）") is a reference, not a list,
+    so at least two markers are required unless the marker follows a colon.
+    """
+    t = clean(text)
+    if not t:
+        return "", []
+    marks = list(SUBITEM_MARK_RE.finditer(t))
+    if not marks:
+        return t, []
+    colon_before = t[: marks[0].start()].rstrip().endswith(("：", ":", "；", ";"))
+    if len(marks) < 2 and not colon_before:
+        return t, []
+
+    head = t[: marks[0].start()].strip()
+    items: list[str] = []
+    for i, mark in enumerate(marks):
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(t)
+        piece = t[mark.start():end].strip()
+        # "（1）" with nothing usable after it is a stray marker, not an item
+        body = SUBITEM_MARK_RE.sub("", piece, count=1).strip()
+        if len(body) >= 2:
+            items.append(piece)
+    if len(items) < 2 and not colon_before:
+        return t, []
+    return head, items
 
 
 def split_inline_bullets(text: str) -> tuple[str, list[str]]:
@@ -244,6 +295,13 @@ def classify(
         top = float(para.get("top") or 0.0)
         x0 = float(para.get("x0") or 0.0)
 
+        # A "（1）…" line right after a clause/paragraph belongs to it: keep the
+        # nesting instead of turning it into a sibling ordered list.
+        sub = subitem_line(text)
+        if sub and blocks and blocks[-1].kind in ("clause", "para") and blocks[-1].page == page:
+            blocks[-1].items.append(sub)
+            continue
+
         item = bullet_item(text)
         if item:
             if numbered:
@@ -270,11 +328,13 @@ def classify(
         flush()
 
         if number:
+            lead, subs = split_subitems(clause_body)
             blocks.append(
                 Block(
                     kind="clause",
-                    text=clause_body,
+                    text=lead,
                     number=number,
+                    items=subs,
                     page=page,
                     top=top,
                     x0=x0,
@@ -284,17 +344,21 @@ def classify(
             )
             continue
 
-        level = heading_level(text, size, body_size)
+        lead, subs = split_subitems(text)
+        level = heading_level(lead, size, body_size) if not subs else 0
         if level:
             blocks.append(
-                Block(kind="heading", text=text, level=level, page=page, top=top, x0=x0,
+                Block(kind="heading", text=lead, level=level, page=page, top=top, x0=x0,
                       size=size, source=source)
             )
         else:
             blocks.append(
-                Block(kind="para", text=text, page=page, top=top, x0=x0, size=size, source=source)
+                Block(kind="para", text=lead, items=subs, page=page, top=top, x0=x0,
+                      size=size, source=source)
             )
     flush()
+    for i, block in enumerate(blocks, 1):
+        block.id = block.id or f"b{i}"
     return blocks
 
 
@@ -328,13 +392,21 @@ def tree(blocks: list[Block]) -> dict:
 
 
 def _leaf(block: Block) -> dict:
-    if block.kind == "bullet_list":
-        return {"type": "bullet_list", "items": block.items, "page": block.page}
-    if block.kind == "numbered_list":
-        return {"type": "numbered_list", "items": block.items, "page": block.page}
+    out: dict = {"id": block.id, "type": block.kind, "page": block.page}
+    if block.kind in ("bullet_list", "numbered_list"):
+        out["items"] = block.items
+        return out
     if block.kind == "clause":
-        return {"type": "clause", "number": block.number, "text": block.text, "page": block.page}
-    return {"type": block.kind, "text": block.text, "page": block.page}
+        out.update({"number": block.number, "text": block.text})
+    else:
+        out["text"] = block.text
+    if block.kind == "heading":
+        out["level"] = block.level
+    if block.items:
+        out["items"] = block.items
+    if block.bbox:
+        out["bbox"] = list(block.bbox)
+    return out
 
 
 def counts(blocks: list[Block]) -> dict:

@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from pdfmend import __version__, fields, llm, structure
+from pdfmend import __version__, feedback, fields, llm, structure
 from pdfmend.extract import extract
 from pdfmend.quality import score_document
 from pdfmend.render import to_json, to_markdown, to_xlsx, write_html
@@ -209,7 +209,14 @@ def cmd_structure(args: argparse.Namespace) -> int:
     for kind, number in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
         _p(f"  {kind:<14} {number}")
     if args.json:
-        _p(json.dumps(doc.structure or {}, ensure_ascii=False, indent=2))
+        payload = json.dumps(doc.structure or {}, ensure_ascii=False, indent=2)
+        if args.out:
+            out = Path(args.out)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(payload + "\n", encoding="utf-8")
+            _p(f"结构已写入 {out}")
+        else:
+            _p(payload)
         return 0
     for block in doc.blocks:
         if block.kind == "heading":
@@ -231,6 +238,57 @@ def _redact_images(text: str) -> str:
         if end < 0:
             return text
         text = text[:start] + f"<page image, {end - start - len(marker)} bytes of base64>" + text[end:]
+
+
+def cmd_feedback_add(args: argparse.Namespace) -> int:
+    try:
+        tree = feedback.load_structure(args.structure)
+        item = feedback.record(
+            tree,
+            args.block,
+            args.to,
+            document=args.document,
+            document_type=args.document_type,
+            note=args.note,
+        )
+        path = feedback.append(item, args.file)
+    except feedback.FeedbackError as exc:
+        _p(str(exc))
+        return 1
+    _p(f"已记录 {item['block_id']}：{item['original_type']} → {item['corrected_type']}（{path}）")
+    return 0
+
+
+def cmd_feedback_list(args: argparse.Namespace) -> int:
+    try:
+        records = feedback.load(args.file)
+    except feedback.FeedbackError as exc:
+        _p(str(exc))
+        return 1
+    for item in records[-max(1, args.limit):]:
+        page = f" 第{item['page']}页" if item.get("page") else ""
+        _p(
+            f"{item.get('created_at', '')}  {item.get('block_id', '')}{page}  "
+            f"{item.get('original_type')} → {item.get('corrected_type')}  "
+            f"{(item.get('original_text') or '')[:60]}"
+        )
+    if not records:
+        _p(f"{args.file} 里还没有记录")
+    return 0
+
+
+def cmd_feedback_stats(args: argparse.Namespace) -> int:
+    try:
+        data = feedback.stats(feedback.load(args.file))
+    except feedback.FeedbackError as exc:
+        _p(str(exc))
+        return 1
+    _p(f"共 {data['total']} 条纠错")
+    for label, count in data["transitions"].items():
+        _p(f"  {label:<28} {count}")
+    for label, count in data["by_document_type"].items():
+        _p(f"  [{label}] {count}")
+    return 0
 
 
 def cmd_version(_: argparse.Namespace) -> int:
@@ -295,7 +353,28 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("input")
     s.add_argument("--ocr", choices=("auto", "always", "never"), default="auto")
     s.add_argument("--json", action="store_true", help="输出完整结构树 JSON")
+    s.add_argument("-o", "--out", help="把结构 JSON 写到文件（配合 --json）")
     s.set_defaults(func=cmd_structure)
+
+    fb = sub.add_parser("feedback", help="记录并汇总人工纠错（P2，用于改规则和攒评测集）")
+    fbs = fb.add_subparsers(dest="feedback_cmd")
+    fa = fbs.add_parser("add", help="把某个块的类型改对，追加到纠错文件")
+    fa.add_argument("--structure", required=True, help="pdfmend structure --json 的输出文件")
+    fa.add_argument("--block", required=True, help="块 id，例如 b17")
+    fa.add_argument("--to", required=True, choices=feedback.KINDS, help="正确的类型")
+    fa.add_argument("--note", default="", help="为什么改（会进统计，方便之后归类）")
+    fa.add_argument("--document", default="", help="原文件名")
+    fa.add_argument("--document-type", default="", help="合同/简历/研报…")
+    fa.add_argument("--file", default=str(feedback.DEFAULT_FILE))
+    fa.set_defaults(func=cmd_feedback_add)
+    fl = fbs.add_parser("list", help="看最近几条纠错")
+    fl.add_argument("--file", default=str(feedback.DEFAULT_FILE))
+    fl.add_argument("--limit", type=int, default=20)
+    fl.set_defaults(func=cmd_feedback_list)
+    fs = fbs.add_parser("stats", help="按 original→corrected 汇总，找反复出错的模式")
+    fs.add_argument("--file", default=str(feedback.DEFAULT_FILE))
+    fs.set_defaults(func=cmd_feedback_stats)
+    fb.set_defaults(func=lambda _a: (_p(fb.format_help()) or 1))
 
     v = sub.add_parser("version", help="显示版本")
     v.set_defaults(func=cmd_version)
@@ -310,7 +389,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
     if argv[0] not in (
-        "convert", "c", "check", "k", "fields", "structure", "version",
+        "convert", "c", "check", "k", "fields", "structure", "feedback", "version",
         "-V", "--version", "-h", "--help",
     ):
         argv = ["convert", *argv]

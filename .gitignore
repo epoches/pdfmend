@@ -24,3 +24,6 @@ tmp/
 !.env.example
 *.pem
 *.key
+
+# 人工纠错记录是本地数据
+corrections.jsonl

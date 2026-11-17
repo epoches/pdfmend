@@ -47,6 +47,8 @@ class Block:
     items: list[str] = field(default_factory=list)
     number: str = ""  # clause number, e.g. "1.2"
     source: str = "pdf"  # pdf | ocr | docx | xlsx | pptx
+    id: str = ""  # stable handle used by review/feedback ("b7")
+    bbox: tuple[float, float, float, float] | None = None
 
 
 @dataclass

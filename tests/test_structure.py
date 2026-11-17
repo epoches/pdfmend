@@ -35,6 +35,9 @@ def test_heading_level_uses_size_then_markers():
     assert structure.heading_level("第一条 服务内容", size=10, body_size=10) == 2
     assert structure.heading_level("一、总则", size=10, body_size=10) == 2
     assert structure.heading_level("负责后端系统设计与开发", size=10, body_size=10) == 0
+    # label/data lines are not headings even when the font is slightly bigger
+    assert structure.heading_level("年龄：23岁电话：15305682345", size=12, body_size=10) == 0
+    assert structure.heading_level("邮箱：a@b.com", size=12, body_size=10) == 0
 
 
 def test_inline_bullets_are_split_into_a_list():
@@ -97,3 +100,60 @@ def test_long_paragraph_loses_structure_points():
     doc.text_chars = len(doc.blocks[0].text)
     report = score_document(doc)
     assert report.dimensions["structure"]["score"] < 1.0
+
+
+def test_inline_subitems_become_clause_items():
+    blocks = structure.classify(
+        [{"text": "1.2 乙方向甲方提供以下服务：（1）系统架构设计（2）数据库设计"}],
+        body_size=10,
+        page=1,
+    )
+    assert len(blocks) == 1
+    clause = blocks[0]
+    assert clause.kind == "clause"
+    assert clause.text == "乙方向甲方提供以下服务："
+    assert clause.items == ["（1）系统架构设计", "（2）数据库设计"]
+
+
+def test_standalone_subitem_lines_attach_to_the_previous_clause():
+    paras = [
+        {"text": "1.2 乙方负责以下服务：", "size": 10, "top": 10, "x0": 40},
+        {"text": "（1）系统架构设计", "size": 10, "top": 25, "x0": 55},
+        {"text": "（2）数据库设计", "size": 10, "top": 40, "x0": 55},
+        {"text": "1.3 甲方应在验收后付款。", "size": 10, "top": 60, "x0": 40},
+    ]
+    blocks = structure.classify(paras, body_size=10, page=1)
+    assert [b.kind for b in blocks] == ["clause", "clause"]
+    assert blocks[0].items == ["（1）系统架构设计", "（2）数据库设计"]
+    assert blocks[1].items == []
+
+
+def test_subitems_without_a_parent_stay_a_list():
+    blocks = structure.classify(
+        [{"text": "（1）准备材料", "size": 10}, {"text": "（2）提交申请", "size": 10}],
+        body_size=10,
+        page=1,
+    )
+    assert [b.kind for b in blocks] == ["numbered_list"]
+
+
+def test_single_parenthesis_reference_is_not_a_list():
+    head, items = structure.split_subitems("1.4 详见附件（1）的说明。")
+    assert items == []
+    assert head == "1.4 详见附件（1）的说明。"
+
+
+def test_markdown_renders_clause_subitems_as_nested_list():
+    from pathlib import Path
+
+    from pdfmend.model import Report
+    from pdfmend.render import to_markdown
+
+    doc = Document(path=Path("contract.pdf"), kind="pdf", pages=1)
+    doc.blocks = [
+        Block(kind="clause", number="1.2", text="乙方负责：", items=["（1）系统架构设计", "（2）数据库设计"]),
+    ]
+    report = Report(document=doc, score=90, verdict="可直接使用", reasons=[], tables=[])
+    md = to_markdown(report)
+    assert "- 1.2 乙方负责：" in md
+    assert "  - （1）系统架构设计" in md

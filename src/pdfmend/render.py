@@ -99,7 +99,12 @@ def to_markdown(report: Report) -> str:
             out.append("")
         elif block.kind == "clause":
             prefix = f"{block.number} " if block.number else ""
-            out.append(prefix + block.text)
+            if block.items:
+                out.append(f"- {prefix}{block.text}".rstrip())
+                for item in block.items:
+                    out.append(f"  - {item}")
+            else:
+                out.append(prefix + block.text)
             out.append("")
         elif block.kind == "quote":
             out.append("> " + block.text)
@@ -297,6 +302,11 @@ def to_html(report: Report) -> str:
         elif block.kind == "para":
             for line in block.text.splitlines():
                 parts.append(f"<p>{html.escape(line)}</p>")
+            if block.items:
+                parts.append("<ul class='subitems'>")
+                for item in block.items:
+                    parts.append(f"<li>{html.escape(item)}</li>")
+                parts.append("</ul>")
         elif block.kind in ("bullet_list", "numbered_list"):
             tag = "ul" if block.kind == "bullet_list" else "ol"
             parts.append(f"<{tag}>")
@@ -307,8 +317,13 @@ def to_html(report: Report) -> str:
                 parts.append(f"<li>{html.escape(label)}</li>")
             parts.append(f"</{tag}>")
         elif block.kind == "clause":
-            num = html.escape(block.number) + ". " if block.number else ""
+            num = f"{html.escape(block.number)} " if block.number else ""
             parts.append(f"<p class='clause'>{num}{html.escape(block.text)}</p>")
+            if block.items:
+                parts.append("<ul class='subitems'>")
+                for item in block.items:
+                    parts.append(f"<li>{html.escape(item)}</li>")
+                parts.append("</ul>")
         elif block.kind == "quote":
             parts.append(f"<blockquote>{html.escape(block.text)}</blockquote>")
         elif block.kind == "table" and block.table:

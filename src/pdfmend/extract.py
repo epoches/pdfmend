@@ -231,6 +231,16 @@ def _promote_title(doc: Document) -> None:
         first.level = 1
 
 
+def _assign_ids(doc: Document) -> None:
+    """Give every block a stable handle so a human can point at it later."""
+    n = 0
+    for block in doc.blocks:
+        if block.kind in ("page",):
+            continue
+        n += 1
+        block.id = f"b{n}"
+
+
 def _merge_continued(pages: list[dict]) -> set[str]:
     """Join a table that continues on the next page (header repeated).
 
@@ -391,6 +401,7 @@ def _pdf(path: Path, ocr: str = "never") -> Document:
                 order_violations += 1
         doc.blocks.extend(b for _, _, b in items)
 
+    _assign_ids(doc)
     doc.structure = structure.tree(doc.blocks)
     doc.meta["structure"] = structure.counts(doc.blocks)
     _promote_title(doc)
@@ -481,6 +492,7 @@ def _docx(path: Path) -> Document:
     doc.cjk_chars = len(CJK_RE.findall("".join(text)))
     doc.damaged_chars = _damaged("".join(text))
     doc.meta["structure"] = structure.counts(doc.blocks)
+    _assign_ids(doc)
     doc.structure = structure.tree(doc.blocks)
     return doc
 
