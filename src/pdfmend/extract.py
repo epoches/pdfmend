@@ -245,6 +245,21 @@ def _merge_continued(pages: list[dict]) -> set[str]:
     return merged
 
 
+def _has_page_image(page) -> bool:
+    """True when raster images cover a decent part of the page (i.e. a scan)."""
+    width = page.width or 1.0
+    height = page.height or 1.0
+    covered = 0.0
+    for image in getattr(page, "images", []) or []:
+        try:
+            box_w = float(image["x1"]) - float(image["x0"])
+            box_h = float(image["bottom"]) - float(image["top"])
+        except (KeyError, TypeError, ValueError):
+            return True
+        covered += max(0.0, box_w) * max(0.0, box_h)
+    return covered > 0.3 * width * height
+
+
 def _ocr_paragraphs(page, page_no: int, doc: Document, dpi: int = 200) -> list[dict] | None:
     """Render one page and read it with PaddleOCR; None means "not available"."""
     from . import ocr as ocr_mod
@@ -286,15 +301,19 @@ def _pdf(path: Path, ocr: str = "never") -> Document:
             body_chars = [c for c in chars if not _inside_boxes(c, boxes)]
             paras = layout.body_blocks(body_chars, page.width or 1.0)
             if len(chars) < 10 and ocr in ("auto", "always"):
-                read = _ocr_paragraphs(page, page_no, doc)
-                if read:
-                    paras = read
-                    if page_no in doc.scanned_pages:
-                        doc.scanned_pages.remove(page_no)
-                elif ocr == "always":
-                    doc.meta.setdefault("ocr_errors", []).append(
-                        f"page {page_no}: OCR 不可用（安装 pdfmend[ocr] 后重试）"
-                    )
+                # auto means "this page is a picture of a document": a scan has
+                # one image covering the page.  A near-empty text page (cover,
+                # divider, signature block) is not worth a 20 s OCR warm-up.
+                if ocr == "always" or _has_page_image(page):
+                    read = _ocr_paragraphs(page, page_no, doc)
+                    if read:
+                        paras = read
+                        if page_no in doc.scanned_pages:
+                            doc.scanned_pages.remove(page_no)
+                    elif ocr == "always":
+                        doc.meta.setdefault("ocr_errors", []).append(
+                            f"page {page_no}: OCR 不可用（安装 pdfmend[ocr] 后重试）"
+                        )
             pages.append(
                 {
                     "no": page_no,

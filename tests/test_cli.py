@@ -8,7 +8,7 @@ from pdfmend.cli import main
 
 def test_convert_writes_files(sample_pdf: Path, tmp_path: Path) -> None:
     out = tmp_path / "out"
-    code = main(["convert", str(sample_pdf), "-o", str(out), "-f", "md,json,html"])
+    code = main(["convert", str(sample_pdf), "-o", str(out), "-f", "md,json,html", "--ocr", "never"])
     assert code == 0
     assert (out / "sample.md").exists()
     assert (out / "sample.report.json").exists()
@@ -25,7 +25,7 @@ def test_bare_path_defaults_to_convert(sample_docx: Path, tmp_path: Path) -> Non
 
 def test_strict_mode_returns_2(sample_pdf: Path, tmp_path: Path) -> None:
     code = main([
-        "convert", str(sample_pdf), "-o", str(tmp_path / "s"), "-f", "json", "-q",
+        "convert", str(sample_pdf), "-o", str(tmp_path / "s"), "-f", "json", "-q", "--ocr", "never",
         "--strict", "101",
     ])
     assert code == 2
@@ -36,7 +36,7 @@ def test_bad_format_is_rejected(sample_pdf: Path, tmp_path: Path) -> None:
 
 
 def test_check_mode(sample_pdf: Path) -> None:
-    assert main(["check", str(sample_pdf)]) in (0, 2)
+    assert main(["check", str(sample_pdf), "--ocr", "never"]) in (0, 2)
 
 
 def test_directory_input_picks_supported_files(sample_docx: Path, sample_xlsx: Path, tmp_path: Path) -> None:

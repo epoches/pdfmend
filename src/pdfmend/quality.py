@@ -197,6 +197,12 @@ def score_document(doc: Document) -> Report:
         more = "..." if len(ocr_pages) > 8 else ""
         reasons.append(f"第 {shown}{more} 页由 OCR 识别（扫描/手写），数字与专有名词请核对")
         text_health = max(0.0, text_health - 0.2 * len(ocr_pages) / max(1, doc.pages))
+    ocr_errors = list(doc.meta.get("ocr_errors") or [])
+    if ocr_errors:
+        first = str(ocr_errors[0]).splitlines()[0][:120]
+        reasons.append(
+            f"OCR 未完成（{len(ocr_errors)} 页）：{first}；这些页仍按「没有文本层」处理"
+        )
 
     if doc.tables:
         weight = sum(max(1, t.n_rows) for t in doc.tables)

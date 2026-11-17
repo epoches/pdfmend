@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.1 — 2026-11-17
+
+用真实 PaddleOCR 3.7 + paddlepaddle 跑通后修的兼容与体验问题（0.3.0 的适配层只过了假引擎的测试）：
+
+- **真实 API 对齐**：3.x 走 `predict()`（`ocr()` 只是转发且会告警）；构造参数改用 `use_textline_orientation`，不再触发 `use_angle_cls` 那一串 doc_ori / UVDoc 等多余模型。
+- **paddlepaddle 3.3.x 在 Windows CPU 上会 abort**（`ConvertPirAttribute2RuntimeAttribute not support`，oneDNN），依赖钉到 `>=3.0,<3.3`；检测到 3.3 时自动关 MKLDNN 保命。可用 `PDFMEND_OCR_MKLDNN=0/1` 手动控制。
+- **`--ocr auto` 只对「整页是图片」的页识别**（`_has_page_image`：图像覆盖 ≥30% 页面），空白页/封面页不再白等一次模型加载；要强制识别用 `--ocr always`。
+- **静音 paddle 的 C++ 输出**：oneDNN 探测、模型加载横幅原来会混进 CLI 的 stdout，现在 OCR 期间临时重定向 fd 1。
+- **同行单元格用 `|` 连接**（`月份 | 收入 | 成本`），OCR 文本不再把整行拍平、丢列序；仍然不重建表格结构，报告要求核对数字。
+- **OCR 失败会写进报告**：`meta["ocr_errors"]` 现在会变成原因行（"OCR 未完成（1 页）：…"），不再只在 `meta` 里躺着。
+- **`available()` 用 `find_spec`** 探测，不再 `import paddleocr`：普通文字 PDF 的 `--ocr auto` 从 50 秒降到 0.2 秒（测试套件 180 秒 → 13 秒）。
+- 新增 `examples/make_scan.py`（200dpi、倾斜 1.8°、带噪点的合成扫描件），本机实测 7 行全对、质量分 80「需抽查」。
+- 测试 70 个。
+
 ## 0.3.0 — 2026-11-17
 
 扫描件与字段抽取，均为**可选**能力，默认安装仍纯本地：

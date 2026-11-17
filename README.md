@@ -76,6 +76,12 @@ pdfmend 扫描件.pdf --ocr always    # 扫描页必须识别，失败就报错�
 
 没装 `pdfmend[ocr]` 时 `--ocr auto` 不报错，只是继续老实说「该页没有文本层」——不会假装识别过。
 
+边界：OCR 只产出文字行，**不重建表格结构**。同一基线上的单元格会用 `|` 连起来（`月份 | 收入 | 成本`），保留列顺序，但它不是表格：没有列校验、没有 bbox、没有置信度，数字请自己核。要表格请先拿到有文本层的原件；扫描件的表格适合配 `pdfmend fields` 按字段抽，而不是整表还原。`examples/make_scan.py` 会生成一张 200dpi、倾斜 1.8°、带噪点的合成扫描件，可用来对比识别结果（本机实测 7 行全对、质量分 80「需抽查」）。
+
+Windows 上 **paddlepaddle 3.3.x 的 oneDNN 会直接 abort**（`ConvertPirAttribute2RuntimeAttribute not support`），所以依赖里钉了 `paddlepaddle>=3.0,<3.3`；检测到 3.3 时 pdfmend 自动关掉 MKLDNN 保命（慢约 3 倍），想手动控制用 `PDFMEND_OCR_MKLDNN=0/1`。
+
+速度：本机（32 核 CPU、无 GPU）200dpi A4 页面，首张约 25–30 秒（含加载模型），之后每页约 15 秒；同一进程里多页只付一次模型加载。`--ocr auto` 只对「整页是图片」的页动手，所以普通文字 PDF 不会被拖慢。
+
 ### 复杂字段：`pdfmend fields`（DeepSeek / Qwen3-VL）
 
 ```bash

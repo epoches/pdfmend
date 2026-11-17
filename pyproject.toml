@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pdfmend"
-version = "0.3.0"
+version = "0.3.1"
 description = "PDF/DOCX/PPTX/XLSX to Markdown + Excel, with a confidence report. Chinese-first, local-only."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -26,7 +26,9 @@ ocr = [
   "opencv-python-headless>=4.9",
   "numpy>=1.24",
   "paddleocr>=2.7",
-  "paddlepaddle>=2.6",
+  # 3.3.x 在 Windows CPU 上会 abort（oneDNN "ConvertPirAttribute2RuntimeAttribute"）；
+  # 3.2.x 既正确又比关掉 mkldnn 快约 3 倍。
+  "paddlepaddle>=3.0,<3.3",
 ]
 # LLM 字段抽取只用标准库（urllib），没有额外依赖，只缺一个环境变量里的 key。
 

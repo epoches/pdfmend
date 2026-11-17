@@ -61,3 +61,14 @@ def test_paragraphs_join_latin_with_space_and_dehyphenate():
     ]
     text = ocr.to_paragraphs(lines)[0]["text"]
     assert text == "The quick brown fox jumps wellknown"
+
+
+def test_paragraphs_keep_column_order_with_pipes():
+    lines = [
+        ocr.Line("合计", 0.9, top=100, left=0, height=10),
+        ocr.Line("4,530.50", 0.9, top=101, left=120, height=10),
+        ocr.Line("2,830.30", 0.9, top=99, left=240, height=10),
+        ocr.Line("备注：无", 0.9, top=140, left=0, height=10),
+    ]
+    texts = [para["text"] for para in ocr.to_paragraphs(lines)]
+    assert texts == ["合计 | 4,530.50 | 2,830.30", "备注：无"]
