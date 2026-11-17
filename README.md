@@ -30,7 +30,7 @@ $ pdfmend 利润表.pdf
 |---|---|---|
 | 表格列数 | **6** | 9（多出 3 个空列，首列数据整体右移一格） |
 | 两级表头 | 合并成 `本期发生额 / 借方` | 拆成两行数据行 |
-| 扫描件 | 明确报「第 1 页没有文本层，v0.1 不含 OCR」 | 输出空字符串，不解释 |
+| 扫描件 | 明确报「第 1 页没有文本层，不做 OCR」 | 输出空字符串，不解释 |
 | 结果可信度 | 质量分 98/100 + 每表置信度 | 无 |
 
 复现：`python examples/make_demo.py && python examples/benchmark_vs_markitdown.py`
@@ -39,9 +39,28 @@ markitdown 是个好工具，我们在它上面省了很多时间。但它面向
 
 ---
 
+## 非标 PDF 才是重点（v0.2）
+
+大模型能把版面规整的 PDF 转得不错，所以通用转换不是这个仓库的战场。真正没人愿意干、也最容易出错的是**版面不规整的 PDF**：没有表格线的表、双栏排版、每页重复的页眉页脚、一张表被切到下一页。
+
+v0.2 的做法是绕开 PDF 自带的文字流，直接按字符坐标重建版面（`src/pdfmend/layout.py`）：
+
+| 你遇到的情况 | pdfmend 现在怎么做 |
+|---|---|
+| 表格只有空格、没有框线（常见于扫描后 OCR 过的报表） | 按每列的 x 坐标聚类还原列 → 6 行 4 列，数字原样进 Excel |
+| 正文是双栏/多栏，复制出来两句夹在一起 | 找到栏间空档，按栏读完再读下一栏 |
+| 每页顶部/底部有公司名和页码，被当成正文混进表格 | 只删“跨 ≥60% 页面重复且贴页边”的行，正文一个字不动 |
+| 一张表被分到两页，表头重复一遍 | 识别重复表头，合并成一张表，标 `continued`，`page_end` 记结束页 |
+
+复现：`python examples/make_messy.py`，四个样例各对应上面一行；`pytest tests/test_layout.py` 是同一组的断言。
+
+这里没有“大模型猜”，全是几何和统计，所以**本地、可解释、可测**。代价是规则有边界：竖排文字、印章盖字、手写批注仍然处理不了 —— 这类会走“报出来”而不是“猜一个”。
+
+---
+
 ## 安装
 
-还没发 PyPI（v0.1），先源码安装：
+还没发 PyPI（v0.2），先源码安装：
 
 ```bash
 git clone https://github.com/epoches/pdfmend.git
@@ -127,21 +146,22 @@ confidence = 0.45 × 填充率
 | `merged_cells_suspected` | 相邻格子重复，疑似纵向合并被展开 |
 | `no_header` | 首行不像表头 |
 | `too_small` | 少于 2 行或 2 列 |
+| `continued` | 表格从上一页续过来，已合并（看 `page_end`） |
 
 文档级：≥85 可直接用，≥60 建议抽查，否则人工复核。**这是启发式，不是测量** —— 它宁可保守地喊一声，也不假装 100% 正确。
 
-## v0.1 明确不做的事
+## 明确不做的事
 
 - **不做 OCR。** 扫描件/图片页会检测出来并点名页码，然后停在这里。
 - **不做回填。** 不会把改好的 Excel 塞回 PDF（这是 `docs/why.md` 里记录的下一个真实需求）。
 - **不碰 .doc / .xls 老格式。** 只支持 .docx / .xlsx / .pptx / .pdf。
-- **不保证 100% 还原。** 跨页表、嵌套表、印章盖住表格，会尽力转并标出来。
+- **不保证 100% 还原。** 跨页表会自动合并并标 continued；嵌套表、印章盖住表格仍会尽力转并标出来。
 
 ## 支持矩阵
 
 | 格式 | 文本 | 表格 | 已知限制 |
 |---|---|---|---|
-| `.pdf` | ✅ | ✅ lines + text 双策略 | 无文本层的页报出来；表格识别不到时退化为文本 |
+| `.pdf` | ✅ | ✅ lines + cluster + text 三策略 | 无文本层的页报出来；无框线表靠坐标聚类；识别不到时退化为文本 |
 | `.docx` | ✅ | ✅ 按正文顺序 | 合并单元格保留内容、不重复；复杂嵌套表按外层处理 |
 | `.xlsx` | — | ✅ 每个 sheet 一张表 | `read_only` 模式，单表最多 500 行 |
 | `.pptx` | ✅ | ✅ | 图表/图片里的文字不提取 |
@@ -150,10 +170,13 @@ confidence = 0.45 × 填充率
 
 ```bash
 pip install -e ".[dev]"
-pytest                     # 30 个测试，含真实 PDF/DOCX/XLSX 夹具
+pytest                     # 34 个测试，含真实 PDF/DOCX/XLSX 夹具
 python examples/make_demo.py
+python examples/make_messy.py
 python examples/benchmark_vs_markitdown.py
 ```
+
+`make_messy.py` 生成四个“难转”样例（无框线表、双栏、页眉页脚、跨页表），可以直接拿 `pdfmend` 和别的工具对比。
 
 ## English
 
@@ -163,7 +186,8 @@ python examples/benchmark_vs_markitdown.py
 - Every table gets a confidence score; scanned pages, mojibake and suspected merged cells are flagged instead of silently dropped.
 - Local-only: files never leave your machine. No API keys, no upload.
 - Chinese-first: two-level headers, CJK text, and `1,234,500.00` are first-class cases.
-- v0.1 does **not** do OCR, round-tripping back into PDF, or legacy `.doc/.xls`.
+- v0.2 recovers **non-standard layouts**: rule-less tables (whitespace-only columns), multi-column prose read in column order, repeated running heads/footers dropped, and a table split across pages merged back into one (`continued`).
+- v0.2 does **not** do OCR, round-tripping back into PDF, or legacy `.doc/.xls`.
 
 ```bash
 pip install -e .

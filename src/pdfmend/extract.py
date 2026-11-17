@@ -97,7 +97,7 @@ def _shares_rows(text_rows: list[list[str]], lined_rows: list[list[str]]) -> boo
     return hits >= 0.8 * len(want)
 
 
-def _tables_from_page(page, page_no: int, prefix: str) -> list[Table]:
+def _tables_from_page(page, page_no: int, chars=None) -> list[Table]:
     found: list[tuple[str, list[list[str]], tuple]] = []
     page_area = (page.width or 1) * (page.height or 1)
     for origin, settings in (("lines", LINE_SETTINGS), ("text", TEXT_SETTINGS)):
@@ -126,11 +126,31 @@ def _tables_from_page(page, page_no: int, prefix: str) -> list[Table]:
             width = max(len(r) for r in rows)
             if width < 2:
                 continue
+            if origin == "text":
+                from .layout import looks_like_prose
+
+                # The text strategy happily reads two columns of prose as a
+                # table; those become paragraphs instead.
+                if looks_like_prose(rows):
+                    continue
             bbox = _union(boxes, tuple(round(float(v), 2) for v in t.bbox))
             area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
             if area > 0.92 * page_area and width <= 2:
                 continue  # page frame, not a table
             found.append((origin, rows, bbox))
+
+    # Rule-less tables: columns only exist as whitespace. pdfplumber's text
+    # strategy guesses from word positions and happily glues prose into extra
+    # columns, so recover these from geometry instead.
+    lines_boxes = [b for origin, _, b in found if origin == "lines"]
+    clustered: list[tuple[str, list[list[str]], tuple]] = []
+    for cand in _cluster_candidates(chars):
+        if any(_iou(cand[2], b) > 0.25 for b in lines_boxes):
+            continue
+        if any(_iou(cand[2], b) > 0.4 for _, _, b in clustered):
+            continue
+        clustered.append(cand)
+    found.extend(clustered)
 
     # A bordered grid found by the "lines" strategy beats a text candidate that
     # merely re-covers it: text candidates glue surrounding prose into extra
@@ -146,8 +166,9 @@ def _tables_from_page(page, page_no: int, prefix: str) -> list[Table]:
             )
         ]
 
+    rank = {"lines": 0, "cluster": 1, "text": 2}
     # prefer the candidate that explains more cells; lines beat text on a tie
-    found.sort(key=lambda c: (-(len(c[1]) * max(len(r) for r in c[1])), c[0] != "lines"))
+    found.sort(key=lambda c: (-(len(c[1]) * max(len(r) for r in c[1])), rank.get(c[0], 3)))
 
     kept: list[tuple[str, list[list[str]], tuple]] = []
     for cand in found:
@@ -159,49 +180,129 @@ def _tables_from_page(page, page_no: int, prefix: str) -> list[Table]:
     tables = []
     for i, (origin, rows, bbox) in enumerate(kept, 1):
         tables.append(
-            Table(id=f"{prefix}t{i}", rows=rows, page=page_no, bbox=bbox, origin=origin)
+            Table(id=f"{prefix_for(page_no)}t{i}", rows=rows, page=page_no, bbox=bbox, origin=origin)
         )
     return tables
+
+
+def _cluster_candidates(chars) -> list[tuple[str, list[list[str]], tuple]]:
+    if not chars:
+        return []
+    from .layout import cluster_tables
+
+    out = []
+    for cand in cluster_tables(chars):
+        out.append(("cluster", cand["rows"], cand["bbox"]))
+    return out
+
+
+def prefix_for(page_no: int) -> str:
+    return f"p{page_no}"
+
+
+def _inside_boxes(ch: dict, boxes) -> bool:
+    x = ch.get("x0", 0.0)
+    y = ch.get("top", 0.0)
+    for x0, y0, x1, y1 in boxes:
+        if x0 - 1 <= x <= x1 + 1 and y0 - 1 <= y <= y1 + 1:
+            return True
+    return False
+
+
+def _same_row(a: list[str], b: list[str]) -> bool:
+    if len(a) != len(b):
+        return False
+    return all("".join(x.split()).lower() == "".join(y.split()).lower() for x, y in zip(a, b))
+
+
+def _merge_continued(pages: list[dict]) -> set[str]:
+    """Join a table that continues on the next page (header repeated).
+
+    Statements, bank exports and tender documents split tables over pages and
+    repeat the header; leaving them apart makes the user stitch them by hand.
+    """
+    flat = [t for p in pages for t in p["tables"]]
+    merged: set[str] = set()
+    prev = None
+    for t in flat:
+        t.page_end = t.page
+        if (
+            prev is not None
+            and prev.page_end == (t.page or 0) - 1
+            and prev.n_cols == t.n_cols
+            and prev.n_cols >= 2
+            and prev.n_rows >= 2
+            and t.n_rows >= 2
+            and _same_row(prev.rows[0], t.rows[0])
+        ):
+            prev.rows.extend(t.rows[1:])
+            prev.page_end = t.page
+            if "continued" not in prev.flags:
+                prev.flags.append("continued")
+            merged.add(t.id)
+            continue
+        prev = t
+    return merged
 
 
 def _pdf(path: Path) -> Document:
     import pdfplumber
 
+    from . import layout
+
     doc = Document(path=path, kind="pdf")
+    pages: list[dict] = []
     with pdfplumber.open(str(path)) as pdf:
         doc.pages = len(pdf.pages)
         for page_no, page in enumerate(pdf.pages, 1):
-            raw_chars = getattr(page, "chars", []) or []
-            text_raw = ""
-            try:
-                text_raw = page.extract_text() or ""
-            except Exception:
-                text_raw = ""
-            doc.text_chars += len(text_raw)
-            doc.cjk_chars += len(CJK_RE.findall(text_raw))
-            doc.damaged_chars += _damaged(text_raw)
-            if len(raw_chars) < 10:
+            chars = layout.usable(getattr(page, "chars", []) or [])
+            if len(chars) < 10:
                 doc.scanned_pages.append(page_no)
-
-            tables = _tables_from_page(page, page_no, prefix=f"p{page_no}")
+            tables = _tables_from_page(page, page_no, chars)
+            boxes = [t.bbox for t in tables if t.bbox]
+            body_chars = [c for c in chars if not _inside_boxes(c, boxes)]
+            paras = layout.body_blocks(body_chars, page.width or 1.0)
+            pages.append(
+                {
+                    "no": page_no,
+                    "paras": paras,
+                    "tables": tables,
+                    "height": page.height or 1.0,
+                }
+            )
             doc.tables.extend(tables)
-            doc.blocks.append(Block(kind="page", page=page_no))
 
-            remaining = page
-            for t in tables:
-                if t.bbox:
-                    try:
-                        remaining = remaining.outside_bbox(t.bbox)
-                    except Exception:
-                        pass
-            try:
-                body = remaining.extract_text() or ""
-            except Exception:
-                body = ""
-            if body.strip():
-                doc.blocks.append(Block(kind="para", text=body.strip(), page=page_no))
-            for t in tables:
-                doc.blocks.append(Block(kind="table", table=t, page=page_no))
+    heads = layout.running_heads([p["paras"] for p in pages], pages[0]["height"] if pages else 0.0)
+    merged = _merge_continued(pages)
+    if merged:
+        doc.tables = [t for t in doc.tables if t.id not in merged]
+
+    text_parts: list[str] = []
+    for p in pages:
+        doc.blocks.append(Block(kind="page", page=p["no"]))
+        items: list[tuple[float, Block]] = []
+        for para in p["paras"]:
+            if layout.normalise_running_head(para["text"]) in heads:
+                continue
+            items.append((para["top"], Block(kind="para", text=para["text"], page=p["no"])))
+            text_parts.append(para["text"])
+        for t in p["tables"]:
+            if t.id in merged:
+                continue
+            top = t.bbox[1] if t.bbox else p["height"]
+            items.append((top, Block(kind="table", table=t, page=t.page)))
+            text_parts.extend(c for r in t.rows for c in r)
+        items.sort(key=lambda it: it[0])
+        doc.blocks.extend(b for _, b in items)
+
+    text = "\n".join(text_parts)
+    doc.text_chars = len(text)
+    doc.cjk_chars = len(CJK_RE.findall(text))
+    doc.damaged_chars = _damaged(text)
+    if heads:
+        doc.meta["running_heads"] = sorted(heads)[:10]
+    if merged:
+        doc.meta["continued_tables"] = sorted(merged)
     return doc
 
 

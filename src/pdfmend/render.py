@@ -85,7 +85,12 @@ def to_markdown(report: Report) -> str:
             out.append("")
         elif block.kind == "table" and block.table:
             t = block.table
-            where = f"第 {t.page} 页，" if t.page else ""
+            where = ""
+            if t.page:
+                if t.page_end and t.page_end != t.page:
+                    where = f"第 {t.page}–{t.page_end} 页，"
+                else:
+                    where = f"第 {t.page} 页，"
             out.append(f"**表 {t.id}**（{where}{t.shape}，置信度 {t.confidence:.2f}）")
             if t.flags:
                 out.append("`" + "` `".join(t.flags) + "`")

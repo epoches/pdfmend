@@ -176,7 +176,7 @@ def score_document(doc: Document) -> Report:
     if doc.scanned_pages:
         shown = ", ".join(str(p) for p in doc.scanned_pages[:8])
         more = "..." if len(doc.scanned_pages) > 8 else ""
-        reasons.append(f"第 {shown}{more} 页没有文本层（扫描件），v0.1 不包含 OCR")
+        reasons.append(f"第 {shown}{more} 页没有文本层（扫描件），当前不做 OCR")
 
     if doc.tables:
         weight = sum(max(1, t.n_rows) for t in doc.tables)

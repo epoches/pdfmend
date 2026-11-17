@@ -13,8 +13,9 @@ class Table:
     id: str
     rows: list[list[str]]
     page: int | None = None
+    page_end: int | None = None
     bbox: tuple[float, float, float, float] | None = None
-    origin: str = "unknown"  # lines | text | docx | xlsx | pptx
+    origin: str = "unknown"  # lines | cluster | text | docx | xlsx | pptx
     flags: list[str] = field(default_factory=list)
     confidence: float = 0.0
     header_rows: int = 1
