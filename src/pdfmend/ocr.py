@@ -81,22 +81,27 @@ def _paddleocr_major() -> int:
 def _quiet():
     """Silence paddle's C++ chatter (oneDNN probes, model banners).
 
-    Paddle writes those lines straight to fd 1, so redirecting ``sys.stdout``
-    is not enough; the file descriptor itself has to be swapped for a moment.
+    Paddle writes those lines straight to fd 1 *and* fd 2 (glog goes to
+    stderr), so redirecting ``sys.stdout`` is not enough; the file descriptors
+    themselves have to be swapped for a moment.
     """
     try:
-        saved = os.dup(1)
+        saved_out = os.dup(1)
+        saved_err = os.dup(2)
         devnull = os.open(os.devnull, os.O_WRONLY)
     except OSError:  # pragma: no cover - no fd juggling on this host
         yield
         return
     try:
         os.dup2(devnull, 1)
+        os.dup2(devnull, 2)
         yield
     finally:
-        os.dup2(saved, 1)
+        os.dup2(saved_out, 1)
+        os.dup2(saved_err, 2)
         os.close(devnull)
-        os.close(saved)
+        os.close(saved_out)
+        os.close(saved_err)
 
 
 def _engine(lang: str = "ch"):
@@ -104,8 +109,16 @@ def _engine(lang: str = "ch"):
         return _ENGINES[lang]
     mkldnn = _mkldnn_default()
     if _paddleocr_major() >= 3:
+        # Skip doc_ori / UVDoc: we deskew ourselves, and each extra model costs
+        # seconds of init and can warp the page in ways that break coordinates.
+        common = {
+            "use_doc_orientation_classify": False,
+            "use_doc_unwarping": False,
+            "use_textline_orientation": True,
+        }
         attempts = (
-            {"lang": lang, "use_textline_orientation": True, "enable_mkldnn": mkldnn},
+            {"lang": lang, "enable_mkldnn": mkldnn, **common},
+            {"lang": lang, **common},
             {"lang": lang, "enable_mkldnn": mkldnn},
             {"lang": lang},
         )

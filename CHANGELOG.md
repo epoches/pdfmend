@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1 — 2026-11-17
+
+- OCR 在真实扫描件上验过一遍（`tmp/real/donation.pdf`，中文公函，31s 冷启动、80 分「需抽查」），识别文本基本可直接阅读。
+- 关闭 paddleocr 3.x 默认加载的 `doc_ori` / `UVDoc` 两个模型：pdfmend 自己纠偏，而且这两个模型会额外拉模型、还会改动页面几何，导致 OCR 坐标对不上原页。
+- `_quiet()` 现在同时重定向 fd 2：paddle 的 `Creating model: (...)` 横幅走的是 stderr，之前会漏到用户终端上。
+
 ## 0.4.0 — 2026-11-17
 
 - **`pdfmend fields --vision`**：把前 3 页渲染成 PNG，和 schema、文本一起发给视觉模型（`qwen3-vl-plus` / `gpt-4o-mini` 等），专治扫描件、印章、手写、歪斜表格这类「文字抽不干净」的字段。`--dry-run` 会把 base64 折成 `<page image, N bytes>`，不会把整页图片糊到终端上。
