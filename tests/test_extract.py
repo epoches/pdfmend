@@ -8,7 +8,7 @@ from pdfmend.extract import extract
 from pdfmend.quality import score_document
 
 
-def test_pdf_extracts_drawn_table(sample_pdf: Path) -> None:
+def test_pdf_extracts_drawn_table(sample_pdf: Path, pdf_labels: dict) -> None:
     doc = extract(sample_pdf)
     assert doc.kind == "pdf"
     assert doc.pages == 2
@@ -17,15 +17,15 @@ def test_pdf_extracts_drawn_table(sample_pdf: Path) -> None:
     assert t.n_rows >= 4
     assert t.n_cols >= 3
     flat = [c for row in t.rows for c in row]
-    assert any("月份" in c or "Month" in c for c in flat)
-    assert any("合计" in c or "Total" in c for c in flat)
+    assert pdf_labels["header"][0] in flat
+    assert pdf_labels["total"] in flat
 
 
-def test_pdf_text_is_kept_outside_tables(sample_pdf: Path) -> None:
+def test_pdf_text_is_kept_outside_tables(sample_pdf: Path, pdf_labels: dict) -> None:
     doc = extract(sample_pdf)
     text = " ".join(b.text for b in doc.blocks if b.kind == "para")
-    assert "对账明细" in text
-    assert "财务系统导出" in text
+    assert pdf_labels["title_token"] in text
+    assert pdf_labels["note_token"] in text
 
 
 def test_pdf_table_body_not_duplicated_in_text(sample_pdf: Path) -> None:

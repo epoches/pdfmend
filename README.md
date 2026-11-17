@@ -1,5 +1,7 @@
 # pdfmend
 
+[![tests](https://github.com/epoches/pdfmend/actions/workflows/tests.yml/badge.svg)](https://github.com/epoches/pdfmend/actions/workflows/tests.yml)
+
 把 PDF / DOCX / PPTX / XLSX 转成 **Markdown** 和 **Excel**，并且**告诉你哪里可能错了**。
 
 中文优先、纯本地运行、不传文件到任何服务器。

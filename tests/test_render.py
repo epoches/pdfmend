@@ -17,11 +17,13 @@ def test_markdown_table_escapes_pipes_and_newlines() -> None:
     assert out.splitlines()[1] == "| --- | --- |"
 
 
-def test_markdown_has_score_table_and_page_markers(sample_pdf: Path) -> None:
+def test_markdown_has_score_table_and_page_markers(
+    sample_pdf: Path, pdf_labels: dict
+) -> None:
     report = score_document(extract(sample_pdf))
     md = to_markdown(report)
     assert "质量分" in md
-    assert "| 月份 | 收入 |" in md.replace("\\|", "|") or "月份" in md
+    assert pdf_labels["header"][0] in md
     assert "<!-- page 2 -->" in md
     assert "置信度" in md
 

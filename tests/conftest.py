@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ import pytest
 FONT_CANDIDATES = [
     Path("C:/Windows/Fonts/simhei.ttf"),
     Path("C:/Windows/Fonts/Deng.ttf"),
+    Path("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
     Path("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"),
     Path("/System/Library/Fonts/PingFang.ttc"),
 ]
@@ -16,14 +18,47 @@ FONT_CANDIDATES = [
 
 @pytest.fixture(scope="session")
 def cjk_font() -> Path | None:
+    if os.environ.get("PDFMEND_NO_CJK_FONT"):
+        return None
     for p in FONT_CANDIDATES:
         if p.exists():
             return p
     return None
 
 
+def _labels(zh: bool) -> dict:
+    if zh:
+        return {
+            "title": "2026 Q1 对账明细",
+            "title_token": "对账明细",
+            "note": "本表由财务系统导出，金额单位为元。",
+            "note_token": "财务系统导出",
+            "header": ["月份", "收入", "成本", "毛利"],
+            "months": ["1月", "2月", "3月"],
+            "total": "合计",
+            "footer": "制表：张三",
+            "page2": "第二页：备注",
+        }
+    return {
+        "title": "2026 Q1 Reconciliation",
+        "title_token": "Reconciliation",
+        "note": "Exported by the finance system; amounts in CNY.",
+        "note_token": "finance system",
+        "header": ["Month", "Income", "Cost", "Gross"],
+        "months": ["Jan", "Feb", "Mar"],
+        "total": "Total",
+        "footer": "Prepared by: Zhang San",
+        "page2": "Page 2: notes",
+    }
+
+
 @pytest.fixture
-def sample_pdf(tmp_path: Path, cjk_font: Path | None) -> Path:
+def pdf_labels(cjk_font: Path | None) -> dict:
+    return _labels(cjk_font is not None)
+
+
+@pytest.fixture
+def sample_pdf(tmp_path: Path, cjk_font: Path | None, pdf_labels: dict) -> Path:
     from fpdf import FPDF
 
     pdf = FPDF()
@@ -34,17 +69,18 @@ def sample_pdf(tmp_path: Path, cjk_font: Path | None) -> Path:
     else:
         pdf.set_font("Helvetica", size=11)
 
-    pdf.cell(0, 8, "2026 Q1 对账明细", border=0)
+    pdf.cell(0, 8, pdf_labels["title"], border=0)
     pdf.ln(10)
-    pdf.cell(0, 6, "本表由财务系统导出，金额单位为元。", border=0)
+    pdf.cell(0, 6, pdf_labels["note"], border=0)
     pdf.ln(10)
 
-    header = ["月份", "收入", "成本", "毛利"]
+    header = pdf_labels["header"]
+    m1, m2, m3 = pdf_labels["months"]
     data = [
-        ["1月", "1,200.00", "800.00", "400.00"],
-        ["2月", "1,350.50", "910.00", "440.50"],
-        ["3月", "1,980.00", "1,120.30", "859.70"],
-        ["合计", "4,530.50", "2,830.30", "1,700.20"],
+        [m1, "1,200.00", "800.00", "400.00"],
+        [m2, "1,350.50", "910.00", "440.50"],
+        [m3, "1,980.00", "1,120.30", "859.70"],
+        [pdf_labels["total"], "4,530.50", "2,830.30", "1,700.20"],
     ]
     widths = [35, 45, 45, 45]
     for row in [header, *data]:
@@ -53,9 +89,9 @@ def sample_pdf(tmp_path: Path, cjk_font: Path | None) -> Path:
         pdf.ln(8)
 
     pdf.ln(6)
-    pdf.cell(0, 6, "制表：张三", border=0)
+    pdf.cell(0, 6, pdf_labels["footer"], border=0)
     pdf.add_page()
-    pdf.cell(0, 6, "第二页：备注", border=0)
+    pdf.cell(0, 6, pdf_labels["page2"], border=0)
     out = tmp_path / "sample.pdf"
     pdf.output(str(out))
     return out

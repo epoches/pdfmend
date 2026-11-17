@@ -87,6 +87,16 @@ def _union(bboxes, fallback):
     )
 
 
+def _shares_rows(text_rows: list[list[str]], lined_rows: list[list[str]]) -> bool:
+    """True when most rows of a lines candidate also appear in a text candidate."""
+    want = [tuple(r) for r in lined_rows if any(r)]
+    if not want:
+        return False
+    have = {tuple(r) for r in text_rows}
+    hits = sum(1 for r in want if r in have)
+    return hits >= 0.8 * len(want)
+
+
 def _tables_from_page(page, page_no: int, prefix: str) -> list[Table]:
     found: list[tuple[str, list[list[str]], tuple]] = []
     page_area = (page.width or 1) * (page.height or 1)
@@ -121,6 +131,20 @@ def _tables_from_page(page, page_no: int, prefix: str) -> list[Table]:
             if area > 0.92 * page_area and width <= 2:
                 continue  # page frame, not a table
             found.append((origin, rows, bbox))
+
+    # A bordered grid found by the "lines" strategy beats a text candidate that
+    # merely re-covers it: text candidates glue surrounding prose into extra
+    # columns and stretch the bbox over the heading (see docs/why.md).
+    lined = [c for c in found if c[0] == "lines" and len(c[1]) >= 2 and max(len(r) for r in c[1]) >= 2]
+    if lined:
+        found = [
+            c
+            for c in found
+            if not (
+                c[0] == "text"
+                and any(_iou(c[2], l[2]) > 0.2 and _shares_rows(c[1], l[1]) for l in lined)
+            )
+        ]
 
     # prefer the candidate that explains more cells; lines beat text on a tie
     found.sort(key=lambda c: (-(len(c[1]) * max(len(r) for r in c[1])), c[0] != "lines"))
