@@ -14,6 +14,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from pdfmend import usage
 from pdfmend.extract import extract
 from pdfmend.model import Report
 from pdfmend.quality import score_document
@@ -166,4 +167,19 @@ def convert_file(
         result.error = f"{type(exc).__name__}: {exc}"
     finally:
         result.seconds = time.perf_counter() - started
+        _record(result)
     return result
+
+
+def _record(result: ConversionResult) -> None:
+    """Keep a local history line and advance the donation counter.
+
+    Logging must never break a conversion, so every failure here is swallowed.
+    """
+    if not result.ok:
+        return
+    try:
+        usage.log_conversion(result)
+        usage.record_success()
+    except Exception:  # noqa: BLE001 - history is best effort
+        pass

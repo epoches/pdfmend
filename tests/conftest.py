@@ -124,6 +124,14 @@ def sample_pdf(tmp_path: Path, cjk_font: Path | None, pdf_labels: dict) -> Path:
     return out
 
 
+@pytest.fixture(autouse=True)
+def _isolated_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Keep conversion logs / license / counters out of the real tmp folder."""
+    monkeypatch.setenv("PDFMEND_TMP", str(tmp_path / "state"))
+    monkeypatch.setenv("PDFMEND_MACHINE_ID", "A1B2C3D4E5F6")
+    yield
+
+
 @pytest.fixture
 def blank_pdf(tmp_path: Path) -> Path:
     from fpdf import FPDF

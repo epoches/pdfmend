@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from pdfmend import __version__, feedback, fields, llm, structure
+from pdfmend import __version__, feedback, fields, licensing, llm, structure
 from pdfmend.extract import extract
 from pdfmend.quality import score_document
 from pdfmend.services.conversion import (
@@ -281,6 +281,21 @@ def cmd_feedback_stats(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_register(args: argparse.Namespace) -> int:
+    ok, message = licensing.register(
+        args.user, args.code, allow_server=not args.offline
+    )
+    _p(("✅ " if ok else "❌ ") + message)
+    return 0 if ok else 1
+
+
+def cmd_license(_: argparse.Namespace) -> int:
+    _p(licensing.license_summary())
+    _p(f"机器码：{licensing.machine_id()}")
+    _p(f"状态文件：{licensing.state_path()}")
+    return 0
+
+
 def cmd_version(_: argparse.Namespace) -> int:
     _p(f"pdfmend {__version__}")
     return 0
@@ -368,6 +383,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     v = sub.add_parser("version", help="显示版本")
     v.set_defaults(func=cmd_version)
+
+    r = sub.add_parser("register", help="用用户名+注册码注册（默认先本机验证，再问服务器）")
+    r.add_argument("--user", required=True, help="用户名")
+    r.add_argument("--code", required=True, help="注册码，例如 20261117-ABCDEFGH23456789")
+    r.add_argument("--offline", action="store_true", help="只做本机验证，不访问服务器")
+    r.set_defaults(func=cmd_register)
+
+    lic = sub.add_parser("license", help="显示注册状态与机器码")
+    lic.set_defaults(func=cmd_license)
     return p
 
 
@@ -379,7 +403,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
     if argv[0] not in (
-        "convert", "c", "check", "k", "fields", "structure", "feedback", "version",
+        "convert", "c", "check", "k", "fields", "structure", "feedback",
+        "register", "license", "version",
         "-V", "--version", "-h", "--help",
     ):
         argv = ["convert", *argv]

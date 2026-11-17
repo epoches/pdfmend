@@ -39,6 +39,33 @@ markitdown 是个好工具，我们在它上面省了很多时间。但它面向
 
 ---
 
+## 支持作者 · Support the project
+
+![微信赞赏码](docs/assets/donation.png)
+
+pdfmend 是**免费、无功能限制**的（MIT 许可，源码全在仓库里）。如果它帮你省下了一个下午，可以扫上面的**微信赞赏码**请作者喝杯咖啡 —— 这是自愿的，不赞赏也不影响任何功能。
+
+**注册码**（可选，支持作者可换取一个长期注册码）：把「关于」里显示的**本机机器码**发给作者，会收到一个由「用户名 + 签发日期 + 机器码」算出的注册码。填在「设置 → 注册」或运行：
+
+```bash
+pdfmend register --user 你的用户名 --code 20261117-XXXXXXXX
+pdfmend license            # 查看注册状态与本机机器码
+```
+
+注册码在本机就能离线验算（同一用户名 + 日期 + 机器码必然算出同一串），所以内网、断网环境也能用；联网时还会向 `https://jyang.top/api/regfileconverter.php?id=…&code=…` 复核一次。**未注册的副本每转换 5 个文件会提醒一次打赏码，注册后不再提醒**；转换记录只写在本机 `tmp/conversions.jsonl`，不会上传。
+
+<details>
+<summary>English</summary>
+
+pdfmend is free software with no feature limits (MIT, full source in this repo). If it saved you an afternoon, you can scan the WeChat QR code above and buy the author a coffee — entirely optional, nothing is locked behind it.
+
+**Registration codes** (optional, a thank-you for supporters): send the *machine code* shown in **About** and you get a code derived from `username + issue date + machine code`. Enter it under **Settings → Register** or run `pdfmend register --user NAME --code CODE`. Because the code is a keyed hash of those three inputs, it verifies offline on the same machine (works on intranets with no internet); when online the app also re-checks it against `https://jyang.top/api/regfileconverter.php?id=…&code=…`. Unregistered copies see the donation card once every five conversions; registered copies never do. Conversion history stays on your machine in `tmp/conversions.jsonl` — it is never uploaded. Licenses are per machine: a new computer needs a new code.
+
+</details>
+
+
+---
+
 ## 非标 PDF 才是重点（v0.2）
 
 大模型能把版面规整的 PDF 转得不错，所以通用转换不是这个仓库的战场。真正没人愿意干、也最容易出错的是**版面不规整的 PDF**：没有表格线的表、双栏排版、每页重复的页眉页脚、一张表被切到下一页。
@@ -146,7 +173,7 @@ pdfmend feedback stats                         # 看哪类错误反复出现
 
 边界：证据由模型给出，可能张冠李戴，金额、日期、甲乙方务必对照原件；扫描件的表格仍然只出文字行。
 
-## 桌面版：PDFMend Desktop（v0.6，Windows 10/11 x64）
+## 桌面版：PDFMend Desktop（v0.6–v0.7，Windows 10/11 x64）
 
 不想开命令行的人，用同一个引擎做的图形界面：拖文件 → 选格式 → 看质量分 → 拿走 Markdown / Excel。
 
@@ -156,13 +183,15 @@ pdfmend feedback stats                         # 看哪类错误反复出现
 - 批量队列跑在 `QThreadPool` 里，界面不冻结；转换逻辑与 CLI 是同一套 `services/conversion.py`，所以质量分不会两处不一致。
 - **Key 存进 Windows 凭据管理器**（`keyring`），不写配置文件、不写日志；没 Key 时所有本地功能照常可用。
 - 免费、MIT、无账号、无云上传；「支持作者」只是一页说明，不做支付、不加权限。
+- v0.7：侧栏「关于」显示版本、作者 `epoch`、本机机器码、注册状态与微信赞赏码；注册码可选（见上文「支持作者」），**不注册也不限制任何功能**，只是未注册副本每 5 次转换提醒一次。
+- 转换记录写在本机 `tmp/conversions.jsonl`（程序目录旁，绿色版可随身带）；只在本机，不上传。`PDFMEND_TMP` 可改位置，装到只读目录时自动退回 `%LOCALAPPDATA%\\PDFMend\\tmp`。
 
 自己打包：
 
 ```powershell
 pip install -e ".[desktop,build]"
 powershell -File packaging\build.ps1          # pytest → PyInstaller(onedir) → zip + SHA256
-iscc packaging\installer.iss /DAppVersion=0.6.0   # 可选：Inno Setup 安装包
+iscc packaging\installer.iss /DAppVersion=0.7.0   # 可选：Inno Setup 安装包
 ```
 
 CI 里 `.github/workflows/release-windows.yml` 在打 `v*` tag 时自动跑测试、打包、算 SHA256 并挂到 Release。
@@ -170,7 +199,7 @@ Standard 版不含 OCR（体积小）；OCR 依赖（PaddleOCR/PaddlePaddle）�
 
 ## 安装
 
-还没发 PyPI（v0.6.0），先源码安装：
+还没发 PyPI（v0.7.0），先源码安装：
 
 ```bash
 git clone https://github.com/epoches/pdfmend.git
@@ -291,7 +320,7 @@ v0.5 起文档分是六个可测维度（不可测的维度会丢弃，剩下的
 
 ```bash
 pip install -e ".[dev]"
-pytest                     # 134 个测试，含真实 PDF/DOCX/XLSX 夹具与离屏 GUI 测试
+pytest                     # 153 个测试，含真实 PDF/DOCX/XLSX 夹具与离屏 GUI 测试
 pip install -e ".[dev,desktop]"   # 桌面版：额外装 PySide6 + keyring
 python examples/make_demo.py
 python examples/make_messy.py
@@ -315,6 +344,7 @@ python examples/benchmark_vs_markitdown.py
 - v0.5.1 nests `(1)(2)(3)` sub-items under their clause and lets a reviewer record a fix (`pdfmend feedback add ...`) into an append-only `corrections.jsonl`, with `feedback stats` grouping the recurring confusions.
 - v0.5.2 keeps two-column rows readable: a horizontal gap wider than `max(1.5×font size, 8pt)` becomes a word break, so a CV row no longer reads `2026.2法学|硕士新南威尔士大学`.
 - v0.6 adds **PDFMend Desktop** (PySide6, Windows x64): drag files in, batch queue, quality cards, Markdown/JSON preview, AI field extraction, and a settings page whose API keys live in the Windows credential manager. The GUI calls the same `services/` layer as the CLI, so scores cannot drift. `pip install "pdfmend[desktop]"` or grab the release ZIP.
+- v0.7 adds **About + optional registration**: the About box shows the author, the machine code and the WeChat donation QR; a code is `HMAC-SHA256(secret, user|date|machine)` rendered as `YYYYMMDD-BASE32`, so it verifies offline and is re-checked against `jyang.top` when online. Registered copies never see the donation reminder that unregistered ones get every five conversions. Conversion history stays local in `tmp/conversions.jsonl`.
 - v0.2 recovers **non-standard layouts**: rule-less tables (whitespace-only columns), multi-column prose read in column order, repeated running heads/footers dropped, and a table split across pages merged back into one (`continued`).
 - It does **not** round-trip back into PDF, guess OCR results silently, or read legacy `.doc/.xls`.
 

@@ -19,7 +19,12 @@ ROOT = os.path.abspath(os.path.join(HERE, os.pardir))
 SRC = os.path.join(ROOT, "src")
 
 hidden = collect_submodules("pdfmend")
-datas = collect_data_files("pdfmend")  # profiles/*.json
+datas = collect_data_files("pdfmend")  # profiles/*.json + desktop/assets/*.png
+_donation = os.path.join(SRC, "pdfmend", "desktop", "assets", "donation.png")
+if os.path.exists(_donation) and not any(name.endswith("donation.png") for _, name in datas):
+    datas.append(
+        (_donation, os.path.join("pdfmend", "desktop", "assets"))
+    )
 
 a = Analysis(  # noqa: F821
     [os.path.join(SRC, "pdfmend", "desktop", "app.py")],

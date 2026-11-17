@@ -1,12 +1,21 @@
-"""Voluntary support dialog: WeChat / Alipay / GitHub Sponsors."""
+"""Voluntary support dialog, with the author's payment QR embedded.
+
+Shown in two situations:
+
+* the user clicks "支持作者" / "Donation";
+* an unregistered copy has just finished its 5th, 10th, ... conversion.
+
+Nothing here limits functionality -- the dialog only asks.
+"""
 
 from __future__ import annotations
 
-from PySide6.QtCore import QUrl
-from PySide6.QtGui import QDesktopServices
+from pathlib import Path
+
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QDialog,
-    QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -16,60 +25,65 @@ from PySide6.QtWidgets import (
 
 SPONSORS_URL = "https://github.com/sponsors/epoches"
 REPO_URL = "https://github.com/epoches/pdfmend"
+ASSET = Path(__file__).resolve().parent.parent / "assets" / "donation.png"
 
 
-class _Card(QFrame):
-    def __init__(self, title: str, body: str, parent=None) -> None:
-        super().__init__(parent)
-        self.setObjectName("Panel")
-        layout = QVBoxLayout(self)
-        heading = QLabel(title)
-        heading.setObjectName("CardTitle")
-        layout.addWidget(heading)
-        text = QLabel(body)
-        text.setObjectName("Muted")
-        text.setWordWrap(True)
-        layout.addWidget(text)
-        layout.addStretch(1)
+def donation_pixmap(width: int = 240) -> QPixmap:
+    pixmap = QPixmap(str(ASSET))
+    if pixmap.isNull():
+        return pixmap
+    return pixmap.scaledToWidth(width, Qt.SmoothTransformation)
 
 
 class DonationDialog(QDialog):
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent=None, reminder: bool = False, count: int = 0) -> None:
         super().__init__(parent)
-        self.setWindowTitle("支持作者")
-        self.setMinimumWidth(560)
+        self.setWindowTitle("支持作者" if not reminder else "谢谢使用 PDFMend")
+        self.setMinimumWidth(620)
 
-        layout = QVBoxLayout(self)
+        layout = QHBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
-        layout.setSpacing(12)
+        layout.setSpacing(20)
 
-        title = QLabel("支持 PDFMend")
+        picture = QLabel()
+        pixmap = donation_pixmap(260)
+        if not pixmap.isNull():
+            picture.setPixmap(pixmap)
+            picture.setAlignment(Qt.AlignTop)
+            layout.addWidget(picture)
+
+        side = QVBoxLayout()
+        side.setSpacing(10)
+
+        title = QLabel("支持 PDFMend" if not reminder else f"已转换 {count} 个文件")
         title.setObjectName("PageTitle")
-        layout.addWidget(title)
-        intro = QLabel(
-            "PDFMend 完全免费、没有功能限制，也不收集你的文件。"
-            "如果它帮你省下了时间，欢迎自愿支持；不支持也完全不影响使用。"
+        side.addWidget(title)
+
+        body = (
+            "PDFMend 永久免费、功能不设限，也不上传你的文件。"
+            "如果它替你省下了时间，欢迎用微信扫左边的赞赏码，金额随意；"
+            "不赞赏也完全不影响使用。"
         )
+        if reminder:
+            body = (
+                f"你已经完成 {count} 次转换。这个工具没有试用期，也不会因为不付费减少功能；"
+                "它只是一直在提醒你：如果它真的有用，可以扫左边的码请作者喝杯咖啡。"
+            )
+        intro = QLabel(body)
         intro.setObjectName("Muted")
         intro.setWordWrap(True)
-        layout.addWidget(intro)
+        side.addWidget(intro)
 
-        row = QHBoxLayout()
-        row.setSpacing(12)
-        row.addWidget(
-            _Card("微信赞赏", "打开微信 → 扫作者赞赏码（在项目主页或 README 里），金额随意。")
-        )
-        row.addWidget(
-            _Card("支付宝赞赏", "打开支付宝 → 扫作者收款码（同上）。备注可以写你用它处理了什么文件。")
-        )
-        row.addWidget(
-            _Card("GitHub Sponsors", "海外或订阅式支持：github.com/sponsors/epoches。")
-        )
-        layout.addLayout(row)
+        tips = QLabel("微信扫码即可；海外可用 GitHub Sponsors。注册用户不会看到这个提示。")
+        tips.setObjectName("Muted")
+        tips.setWordWrap(True)
+        side.addWidget(tips)
+        side.addStretch(1)
 
         buttons = QHBoxLayout()
-        sponsors = QPushButton("打开 GitHub Sponsors")
+        sponsors = QPushButton("GitHub Sponsors")
         sponsors.setObjectName("Primary")
+        sponsors.setMinimumWidth(160)
         sponsors.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(SPONSORS_URL)))
         repo = QPushButton("项目主页")
         repo.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(REPO_URL)))
@@ -79,8 +93,10 @@ class DonationDialog(QDialog):
         buttons.addWidget(repo)
         buttons.addStretch(1)
         buttons.addWidget(close)
-        layout.addLayout(buttons)
+        side.addLayout(buttons)
+
+        layout.addLayout(side, 1)
 
 
-def open_donation(parent: QWidget | None = None) -> None:
-    DonationDialog(parent).exec()
+def open_donation(parent: QWidget | None = None, reminder: bool = False, count: int = 0) -> None:
+    DonationDialog(parent, reminder=reminder, count=count).exec()

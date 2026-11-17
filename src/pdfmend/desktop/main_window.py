@@ -19,8 +19,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from pdfmend import __version__
+from pdfmend import __version__, usage
 from pdfmend.config.settings import Settings
+from pdfmend.desktop.dialogs.about import open_about
 from pdfmend.desktop.dialogs.donation import open_donation
 from pdfmend.desktop.pages.convert import ConvertPage
 from pdfmend.desktop.pages.home import HomePage
@@ -101,6 +102,11 @@ class MainWindow(QMainWindow):
         support.clicked.connect(lambda: open_donation(self))
         layout.addWidget(support)
 
+        about = QPushButton("关于")
+        about.setObjectName("Ghost")
+        about.clicked.connect(lambda: open_about(self))
+        layout.addWidget(about)
+
         version = QLabel(f"v{__version__} · MIT")
         version.setObjectName("Muted")
         version.setAlignment(Qt.AlignCenter)
@@ -110,9 +116,16 @@ class MainWindow(QMainWindow):
     def _wire(self) -> None:
         self.home.files_added.connect(self._add_files)
         self.home.browse_requested.connect(self._browse_files)
-        self.convert.finished.connect(lambda: self.go(2))
+        self.convert.finished.connect(self._after_convert)
         self.settings_page.theme_changed.connect(self.apply_theme)
         self.settings_page.saved.connect(self._settings_saved)
+
+    def _after_convert(self) -> None:
+        self.go(2)
+        # Unregistered copies get a gentle reminder every fifth conversion.
+        if usage.should_prompt():
+            usage.mark_prompted()
+            open_donation(self, reminder=True, count=usage.count())
 
     def apply_theme(self, theme: str) -> None:
         app = QApplication.instance()

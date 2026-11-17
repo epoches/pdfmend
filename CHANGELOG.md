@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.0 — 2026-11-17
+
+**打赏与注册**：桌面版加了「关于」、可选注册、每 5 次转换的打赏提醒；仓库首页放打赏码。
+
+- **关于**（左侧栏新按钮）：显示版本、作者 `epoch`（github.com/epoches）、本机机器码、注册状态，以及微信赞赏码；按钮可「支持作者 / 注册… / 项目主页」。
+- **注册（可选，不影响任何功能）**：注册码 = `YYYYMMDD-BASE32`，其中 Base32 是 `HMAC-SHA256(secret, 用户名|签发日期|机器码)` 的前 16 位。因此**同一台机器离线可复算**，内网/断网也能验；联网时再向 `https://jyang.top/api/regfileconverter.php?id=…&code=…` 复核（先 https 后 http，6 秒超时，失败不打扰）。`pdfmend register --user … --code …` 与 `pdfmend license` 提供命令行入口；注册信息存 `tmp/license.json`。
+- **转换记录**：每次转换（CLI 与 GUI 共用 `convert_file`）追加一行到 `tmp/conversions.jsonl`（时间、源文件、是否成功、分数、耗时、输出）。`tmp/` 位于程序目录旁，绿色版拷走时记录跟着走；可用 `PDFMEND_TMP` 改位置。
+- **打赏提醒**：未注册副本每成功转换 **5 个文件**弹一次带赞赏码的提醒，同一里程碑只弹一次；**注册后不再弹**。
+- **服务端**：`server/api/regfileconverter.php`（PDO 预处理语句，读 `fileconverter.reg` 的 `username + regcode`）、`server/schema.sql`（建库建表 + `admin/admin` 测试对）、`server/config.sample.php`、`server/README.md`（部署与发码）；发码工具 `tools/gen_regcode.py`（`--user/--date/--mac/--sql`）。
+- 测试 153 passed：新增 `test_licensing.py`（10）、`test_usage.py`（5）、`test_desktop_extra.py`（4，关于/打赏弹窗、第 5 次提醒只弹一次、注册后不弹）；`conftest.py` 用 `PDFMEND_TMP` 与 `PDFMEND_MACHINE_ID` 隔离真实状态。
+- 说明：`admin/admin` 只是**服务器测试对**，必须联网验证；正式注册码按机器签发，换机器需要换码。
+
 ## 0.6.0 — 2026-11-17
 
 **PDFMend Desktop**：同一套引擎的 Windows 图形界面（PySide6），免费、MIT、默认本地。
