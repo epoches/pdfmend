@@ -7,6 +7,7 @@ and needs an API key in the environment.
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
 
@@ -32,12 +33,29 @@ def document_text(doc: Document) -> str:
     return "\n".join(parts).strip()
 
 
-def build_messages(src: Path, schema: dict, ocr: str = "auto") -> list[dict]:
+def _png(page, dpi: int) -> bytes:
+    buffer = io.BytesIO()
+    page.to_image(resolution=dpi).original.convert("RGB").save(buffer, "PNG")
+    return buffer.getvalue()
+
+
+def page_images(src: Path, limit: int = 3, dpi: int = 144) -> list[bytes]:
+    """Render the first pages to PNG so a vision model can look at them."""
+    if src.suffix.lower() != ".pdf":
+        return []
+    import pdfplumber
+
+    with pdfplumber.open(str(src)) as pdf:
+        return [_png(page, dpi) for page in pdf.pages[:limit]]
+
+
+def build_messages(src: Path, schema: dict, ocr: str = "auto", vision: bool = False) -> list[dict]:
     doc = extract(src, ocr=ocr)
     text = document_text(doc)
-    if not text:
+    images = page_images(src) if vision else []
+    if not text and not images:
         raise ValueError(f"{src.name} 没有可用文本（扫描件请先 --ocr auto 并安装 pdfmend[ocr]）")
-    return llm.build_field_messages(text, schema)
+    return llm.build_field_messages(text, schema, images=images)
 
 
 def run(
@@ -48,10 +66,11 @@ def run(
     provider: str | None = None,
     model: str | None = None,
     ocr: str = "auto",
+    vision: bool = False,
 ) -> Path:
     """Extract fields and write ``<stem>.fields.json``; returns the path."""
     schema = load_schema(schema_path)
-    messages = build_messages(src, schema, ocr=ocr)
+    messages = build_messages(src, schema, ocr=ocr, vision=vision)
     cfg = llm.config_from_env(provider, model)
     content = llm.chat(messages, cfg, json_object=True, max_tokens=1500)
     fields = llm.parse_json(content)
@@ -60,6 +79,7 @@ def run(
         "file": src.name,
         "provider": cfg.provider,
         "model": cfg.model,
+        "vision": vision,
         "fields": fields,
     }
     target.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")

@@ -63,3 +63,35 @@ def test_fields_writes_json_without_the_key(sample_docx, schema_file, monkeypatc
 
 def test_cli_ocr_flag_is_accepted(sample_docx):
     assert cli.main(["check", str(sample_docx), "--ocr", "never"]) in (0, 2)
+
+
+def test_vision_attaches_page_images_without_dumping_them(sample_pdf, schema_file, monkeypatch):
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test-key-123")
+    seen = {}
+
+    def fake_chat(messages, cfg=None, **kwargs):
+        seen["content"] = messages[-1]["content"]
+        return '{"title": "x"}'
+
+    monkeypatch.setattr(llm, "chat", fake_chat)
+    fields.run(sample_pdf, schema_file, provider="deepseek", vision=True)
+    parts = seen["content"]
+    assert isinstance(parts, list) and parts[0]["type"] == "text"
+    images = [p for p in parts if p["type"] == "image_url"]
+    assert images and images[0]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_page_images_on_non_pdf_is_empty(sample_docx):
+    assert fields.page_images(sample_docx) == []
+
+
+def test_vision_dry_run_redacts_base64(sample_pdf, schema_file, capsys, monkeypatch):
+    monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
+    monkeypatch.delenv("PDFMEND_LLM_API_KEY", raising=False)
+    code = cli.main([
+        "fields", str(sample_pdf), "--schema", str(schema_file), "--vision", "--dry-run",
+    ])
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "<page image" in out
+    assert len(out) < 8000  # no megabyte of base64 in the console

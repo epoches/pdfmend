@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0 — 2026-11-17
+
+- **`pdfmend fields --vision`**：把前 3 页渲染成 PNG，和 schema、文本一起发给视觉模型（`qwen3-vl-plus` / `gpt-4o-mini` 等），专治扫描件、印章、手写、歪斜表格这类「文字抽不干净」的字段。`--dry-run` 会把 base64 折成 `<page image, N bytes>`，不会把整页图片糊到终端上。
+- `fields` 的 JSON 增加 `vision` 字段（布尔），方便事后区分这次是不是看了图。
+- 隐私说明同步到 README：`--vision` 的暴露面从“文字”扩大到“整页图片”。
+
 ## 0.3.1 — 2026-11-17
 
 用真实 PaddleOCR 3.7 + paddlepaddle 跑通后修的兼容与体验问题（0.3.0 的适配层只过了假引擎的测试）：

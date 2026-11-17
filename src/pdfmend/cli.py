@@ -146,12 +146,16 @@ def cmd_fields(args: argparse.Namespace) -> int:
         _p(f"找不到文件：{src}")
         return 1
     try:
-        messages = fields.build_messages(src, fields.load_schema(Path(args.schema)), ocr=args.ocr)
+        messages = fields.build_messages(
+            src, fields.load_schema(Path(args.schema)), ocr=args.ocr, vision=args.vision
+        )
     except (ValueError, OSError) as exc:
         _p(f"失败：{exc}")
         return 2
     if args.dry_run:
-        _p(json.dumps(messages, ensure_ascii=False, indent=2)[:4000])
+        preview = json.dumps(messages, ensure_ascii=False, indent=2)
+        preview = _redact_images(preview)
+        _p(preview[:4000])
         _p("（dry-run：没有调用 API，也没有读取任何 key）")
         return 0
     try:
@@ -162,6 +166,7 @@ def cmd_fields(args: argparse.Namespace) -> int:
             provider=args.provider,
             model=args.model,
             ocr=args.ocr,
+            vision=args.vision,
         )
     except (llm.LLMError, ValueError, OSError) as exc:
         _p(f"失败：{exc}")
@@ -169,8 +174,23 @@ def cmd_fields(args: argparse.Namespace) -> int:
     cfg = llm.config_from_env(args.provider, args.model)
     _p(f"{src.name} -> {target.name}")
     _p(f"  · {cfg.describe()}")
+    if args.vision:
+        _p("  · 已把前 3 页图片发给模型（图片不会留在本地之外，但确实发到了服务商）")
     _p("  · 字段由模型生成，金额与日期请对照原件核验")
     return 0
+
+
+def _redact_images(text: str) -> str:
+    """Dry-run output: show that images are attached without dumping base64."""
+    marker = "data:image/png;base64,"
+    while True:
+        start = text.find(marker)
+        if start < 0:
+            return text
+        end = text.find('"', start + len(marker))
+        if end < 0:
+            return text
+        text = text[:start] + f"<page image, {end - start - len(marker)} bytes of base64>" + text[end:]
 
 
 def cmd_version(_: argparse.Namespace) -> int:
@@ -212,6 +232,11 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--model", help="覆盖模型名")
     f.add_argument("--ocr", choices=("auto", "always", "never"), default="auto")
     f.add_argument("-o", "--out", help="输出路径（默认 <文件名>.fields.json）")
+    f.add_argument(
+        "--vision",
+        action="store_true",
+        help="把前 3 页图片也发给模型（Qwen3-VL / GPT-4o 这类视觉模型，扫描件推荐）",
+    )
     f.add_argument("--dry-run", action="store_true", help="只打印将要发送的内容，不调用 API")
     f.set_defaults(func=cmd_fields)
 

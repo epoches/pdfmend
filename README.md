@@ -60,7 +60,7 @@ v0.2 的做法是绕开 PDF 自带的文字流，直接按字符坐标重建版�
 
 ---
 
-## 扫描件与 AI（v0.3，都是可选的）
+## 扫描件与 AI（v0.3–v0.4，都是可选的）
 
 默认安装依然纯本地、零网络。下面两块要显式开启，不装也能正常转文字版 PDF。
 
@@ -88,10 +88,12 @@ Windows 上 **paddlepaddle 3.3.x 的 oneDNN 会直接 abort**（`ConvertPirAttri
 export DEEPSEEK_API_KEY=sk-...          # 只放环境变量
 pdfmend fields 合同.pdf --schema examples/schema.example.json
 pdfmend fields 合同.pdf --schema s.json --dry-run        # 只打印将发送的内容
-pdfmend fields 扫描件.pdf --schema s.json --provider qwen  # Qwen3-VL 读页面图
+pdfmend fields 扫描件.pdf --schema s.json --provider qwen --vision  # Qwen3-VL 直接看页面图
 ```
 
-输出 `<文件名>.fields.json`（`fields` + `provider` + `model`，不含 key）。
+`--vision` 把前 3 页渲染成 PNG 一起发过去（每页约 30–60 KB base64）；扫描件、印章、手写、表格歪斜这类「文字抽不干净」的情况，视觉模型通常比纯文本可靠。代价是三件事：要选支持视觉的模型（`qwen3-vl-plus`、`gpt-4o-mini`），发送体积变大，隐私暴露面也从文字扩大到整页图片——身份证、银行卡那种页面别开。
+
+输出 `<文件名>.fields.json`（`file` / `provider` / `model` / `vision` / `fields`，不含 key）。
 
 隐私：这一步会把提取到的文本发给所选服务商。含身份证号、银行账号的文件请先脱敏，或把 `PDFMEND_LLM_BASE_URL` 指向自建服务。`--dry-run` 可以先看清到底发了什么。
 
@@ -99,7 +101,7 @@ key 的规矩：只从环境变量读（`DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY`
 
 ## 安装
 
-还没发 PyPI（v0.3），先源码安装：
+还没发 PyPI（v0.4），先源码安装：
 
 ```bash
 git clone https://github.com/epoches/pdfmend.git
@@ -211,9 +213,10 @@ confidence = 0.45 × 填充率
 
 ```bash
 pip install -e ".[dev]"
-pytest                     # 34 个测试，含真实 PDF/DOCX/XLSX 夹具
+pytest                     # 73 个测试，含真实 PDF/DOCX/XLSX 夹具
 python examples/make_demo.py
 python examples/make_messy.py
+python examples/make_scan.py       # 合成扫描件，验证 OCR/--vision
 python examples/benchmark_vs_markitdown.py
 ```
 
@@ -227,7 +230,7 @@ python examples/benchmark_vs_markitdown.py
 - Every table gets a confidence score; scanned pages, mojibake and suspected merged cells are flagged instead of silently dropped.
 - Chinese-first: two-level headers, CJK text, and `1,234,500.00` are first-class cases.
 - Local by default: files never leave your machine, no API keys needed.
-- Optional v0.3: `pdfmend[ocr]` adds OpenCV cleanup + PaddleOCR for scanned pages; `pdfmend fields` extracts JSON fields with DeepSeek / Qwen-VL (key from env only, `--dry-run` to inspect the payload).
+- Optional v0.3–v0.4: `pdfmend[ocr]` adds OpenCV cleanup + PaddleOCR for scanned pages; `pdfmend fields` extracts JSON fields with DeepSeek / Qwen-VL (key from env only, `--dry-run` to inspect the payload); `--vision` sends the first pages as images for scans and stamps.
 - v0.2 recovers **non-standard layouts**: rule-less tables (whitespace-only columns), multi-column prose read in column order, repeated running heads/footers dropped, and a table split across pages merged back into one (`continued`).
 - It does **not** round-trip back into PDF, guess OCR results silently, or read legacy `.doc/.xls`.
 

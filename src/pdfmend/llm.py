@@ -163,20 +163,41 @@ SYSTEM_PROMPT = (
     "只输出一个 JSON 对象，键来自 schema，找不到的字段填 null。"
 )
 
+VISION_PROMPT = (
+    "你是严谨的文档字段抽取器。用户会给出页面图片和（可能不完整的）文本，"
+    "以图片为准，文本只作补充。只输出一个 JSON 对象，键来自 schema，"
+    "找不到的字段填 null；看不清就填 null，不要猜。"
+)
 
-def build_field_messages(text: str, schema: dict, max_chars: int = 12000) -> list[dict]:
+
+def _data_url(image: bytes, mime: str = "image/png") -> str:
+    return f"data:{mime};base64,{base64.b64encode(image).decode('ascii')}"
+
+
+def build_field_messages(
+    text: str,
+    schema: dict,
+    images: list[bytes] | None = None,
+    max_chars: int = 12000,
+) -> list[dict]:
     clipped = text if len(text) <= max_chars else text[:max_chars] + "\n...(已截断)"
+    body = (
+        "schema：\n"
+        + json.dumps(schema, ensure_ascii=False, indent=2)
+        + "\n\n文档文本：\n"
+        + clipped
+    )
+    if not images:
+        return [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": body},
+        ]
+    parts: list[dict] = [{"type": "text", "text": body}]
+    for image in images:
+        parts.append({"type": "image_url", "image_url": {"url": _data_url(image)}})
     return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": (
-                "schema：\n"
-                + json.dumps(schema, ensure_ascii=False, indent=2)
-                + "\n\n文档文本：\n"
-                + clipped
-            ),
-        },
+        {"role": "system", "content": VISION_PROMPT},
+        {"role": "user", "content": parts},
     ]
 
 
@@ -201,13 +222,12 @@ def understand_image(
 ) -> str:
     """One-shot question about a page image (Qwen-VL or any vision model)."""
     cfg = cfg or config_from_env()
-    encoded = base64.b64encode(image_bytes).decode("ascii")
     messages = [
         {
             "role": "user",
             "content": [
                 {"type": "text", "text": question},
-                {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{encoded}"}},
+                {"type": "image_url", "image_url": {"url": _data_url(image_bytes, mime)}},
             ],
         }
     ]
