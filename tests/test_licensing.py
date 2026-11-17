@@ -64,6 +64,31 @@ def test_failed_registration_is_not_saved(tmp_path, monkeypatch):
     assert not licensing.load_license().active
 
 
+def test_server_request_uses_a_real_user_agent(monkeypatch):
+    """jyang.top answers 403 to urllib's default UA, so we must send our own."""
+    seen: dict = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self, _n=-1):
+            return b'{"ok": true}'
+
+    def fake_urlopen(request, timeout=None):
+        seen["ua"] = request.get_header("User-agent")
+        return FakeResponse()
+
+    monkeypatch.setattr(licensing.urllib.request, "urlopen", fake_urlopen)
+    result = licensing.check_server("admin", "admin")
+    assert result.ok and result.reachable
+    assert seen["ua"] and "PDFMend/" in seen["ua"]
+    assert "urllib" not in seen["ua"].lower()
+
+
 def test_server_result_parsing():
     parse = licensing._parse_flag
     assert parse({"ok": True})

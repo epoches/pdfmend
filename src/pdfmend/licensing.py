@@ -36,6 +36,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from pdfmend import runtime
+from pdfmend import __version__
 
 # Shared secret for the local check.  It is in the source on purpose: the goal
 # is honest users and a greppable audit trail, not copy protection.
@@ -216,11 +217,14 @@ def check_server(user: str, code: str, timeout: float = 6.0) -> ServerResult:
     user = normalize_user(user)
     code = (code or "").strip().upper()
     query = urllib.parse.urlencode({"id": user, "code": code})
+    # Some hosts (this one included) reject urllib's default user agent with 403.
+    headers = {"User-Agent": f"PDFMend/{__version__} (+https://github.com/epoches/pdfmend)"}
     last = ""
     for base in (SERVER_URL, FALLBACK_URL):
         url = f"{base}?{query}"
         try:
-            with urllib.request.urlopen(url, timeout=timeout) as response:
+            request = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(request, timeout=timeout) as response:
                 body = response.read(8192).decode("utf-8", "replace")
             try:
                 data = json.loads(body)

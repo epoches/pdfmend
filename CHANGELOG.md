@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.1 — 2026-11-17
+
+- **注册服务器已上线并打通**：`https://jyang.top/api/regfileconverter.php`（PHP + MySQL `fileconverter.reg`）。`admin`/`admin` 是公开测试对，`epoch` 有一个按机器码签发的正式码。实测：`register --user admin --code admin` 走服务器通道通过；错码返回 `ok:false`；本机离线验算照常。
+- **修 403**：该站点的 Web 层会拒绝 `Python-urllib/*` 的 User-Agent，`check_server` 之前因此报「服务器连接失败：HTTP 403」。现在客户端统一发 `PDFMend/<版本> (+repo)`，并加了回归测试固定这个头。
+- README 明说定位：源码 MIT，**对懂开发的人本来就没有限制**（改两行就能绕过），所以注册码只是提醒与致谢，软件界面不宣传这点。
+- 测试 154 passed。
+
 ## 0.7.0 — 2026-11-17
 
 **打赏与注册**：桌面版加了「关于」、可选注册、每 5 次转换的打赏提醒；仓库首页放打赏码。

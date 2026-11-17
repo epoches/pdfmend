@@ -1,5 +1,8 @@
 # Registration server（jyang.top）
 
+> 状态：**已部署**（2026-11-17）。线上自测：
+> `curl 'https://jyang.top/api/regfileconverter.php?id=admin&code=admin'` → `{"ok":true,...}`。
+
 软件注册时请求：
 
 ```
@@ -14,6 +17,10 @@ GET https://jyang.top/api/regfileconverter.php?id=<用户名>&code=<注册码>
 
 `ok=false` 表示用户名与注册码不匹配。`reg` 表里存在完全相同的
 `(username, regcode)` 行才算通过。
+
+> **坑**：这台机器前面的 Web 层会拒绝 `Python-urllib/*` 的 User-Agent（403）。
+> 客户端已经改成发 `PDFMend/<版本> (+repo)`；用脚本自测时也请带上普通 UA，
+> 否则会看到 403，误以为接口坏了。
 
 ## 部署
 
