@@ -1,0 +1,175 @@
+"""Command line interface."""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+from pdfmend import __version__
+from pdfmend.extract import extract
+from pdfmend.quality import score_document
+from pdfmend.render import to_json, to_markdown, to_xlsx, write_html
+
+SUPPORTED = {".pdf", ".docx", ".xlsx", ".pptx"}
+FORMATS = ("md", "xlsx", "json", "html")
+DEFAULT_FORMATS = "md,xlsx,html"
+
+
+def _utf8_when_piped() -> None:
+    """Keep UTF-8 in logs/CI; leave an interactive console's code page alone.
+
+    Windows defaults a piped stdout to the ANSI code page (CP936 on Chinese
+    systems), which turns Chinese diagnostics into mojibake in CI and editor
+    terminals. Piped output is almost always consumed as UTF-8, so say UTF-8.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            if not stream.isatty() and (stream.encoding or "").lower() not in ("utf-8", "utf8"):
+                stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
+def _p(text: str = "") -> None:
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        enc = sys.stdout.encoding or "utf-8"
+        print(text.encode(enc, "replace").decode(enc))
+
+
+def _bar(score: int, width: int = 20) -> str:
+    filled = int(round(score / 100 * width))
+    return "[" + "#" * filled + "." * (width - filled) + "]"
+
+
+def _convert_one(src: Path, outdir: Path, formats: set[str], quiet: bool) -> int:
+    doc = extract(src)
+    report = score_document(doc)
+    outdir.mkdir(parents=True, exist_ok=True)
+    stem = src.stem
+    written = []
+    if "md" in formats:
+        p = outdir / f"{stem}.md"
+        p.write_text(to_markdown(report), encoding="utf-8")
+        written.append(p.name)
+    if "xlsx" in formats:
+        if report.tables:
+            written.append(to_xlsx(report, outdir / f"{stem}.xlsx").name)
+        elif not quiet:
+            _p("  ! 没有表格，跳过 xlsx")
+    if "json" in formats:
+        written.append(to_json(report, outdir / f"{stem}.report.json").name)
+    if "html" in formats:
+        written.append(write_html(report, outdir / f"{stem}.report.html").name)
+
+    if not quiet:
+        _p(f"{src.name}")
+        _p(f"  {_bar(report.score)} {report.score}/100  {report.verdict}")
+        for t in report.tables:
+            flag = f"  [{','.join(t.flags)}]" if t.flags else ""
+            where = f"p{t.page}".ljust(5) if t.page else "     "
+            _p(f"  - table {t.id:<4} {where} {t.shape:>8}  conf {t.confidence:.2f}{flag}")
+        for r in report.reasons:
+            _p(f"  · {r}")
+        if written:
+            _p(f"  -> {', '.join(written)}")
+        _p()
+    return report.score
+
+
+def cmd_convert(args: argparse.Namespace) -> int:
+    files: list[Path] = []
+    for p in args.input:
+        path = Path(p)
+        if path.is_dir():
+            files.extend(sorted(f for f in path.rglob("*") if f.suffix.lower() in SUPPORTED))
+        elif path.is_file():
+            files.append(path)
+        else:
+            _p(f"跳过：找不到 {p}")
+    if not files:
+        _p("没有可处理的文件。")
+        return 1
+    formats = {f.strip() for f in args.format.split(",") if f.strip()}
+    bad = formats - set(FORMATS)
+    if bad:
+        _p(f"未知格式：{','.join(sorted(bad))}（可选 {','.join(FORMATS)}）")
+        return 1
+
+    scores = []
+    for src in files:
+        try:
+            score = _convert_one(src, Path(args.outdir) if args.outdir else src.parent, formats, args.quiet)
+            scores.append(score)
+        except Exception as e:  # noqa: BLE001 - one bad file must not kill the batch
+            _p(f"{src.name}: 失败 — {type(e).__name__}: {e}")
+    if args.strict and scores and min(scores) < args.strict:
+        _p(f"严格模式：最低分 {min(scores)} < {args.strict}")
+        return 2
+    return 0
+
+
+def cmd_check(args: argparse.Namespace) -> int:
+    srcs = [Path(p) for p in args.input]
+    worst = 100
+    for src in srcs:
+        try:
+            report = score_document(extract(src))
+        except Exception as e:  # noqa: BLE001
+            _p(f"{src.name}: 失败 — {type(e).__name__}: {e}")
+            worst = 0
+            continue
+        worst = min(worst, report.score)
+        _p(f"{src.name}  {_bar(report.score)} {report.score}/100  {report.verdict}")
+        for r in report.reasons:
+            _p(f"  · {r}")
+    return 0 if worst >= 60 else 2
+
+
+def cmd_version(_: argparse.Namespace) -> int:
+    _p(f"pdfmend {__version__}")
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="pdfmend",
+        description="把 PDF/DOCX/PPTX/XLSX 转成 Markdown 和 Excel，并把坏掉的表格指出来。",
+    )
+    p.add_argument("-V", "--version", action="version", version=f"pdfmend {__version__}")
+    sub = p.add_subparsers(dest="cmd")
+
+    c = sub.add_parser("convert", aliases=["c"], help="转换文件或目录")
+    c.add_argument("input", nargs="+", help="文件或目录")
+    c.add_argument("-o", "--outdir", help="输出目录（默认与原文件同目录）")
+    c.add_argument("-f", "--format", default=DEFAULT_FORMATS, help=f"逗号分隔，可选 {','.join(FORMATS)}")
+    c.add_argument("-q", "--quiet", action="store_true")
+    c.add_argument("--strict", type=int, metavar="N", help="质量分低于 N 时返回退出码 2")
+    c.set_defaults(func=cmd_convert)
+
+    k = sub.add_parser("check", aliases=["k"], help="只体检，不写文件")
+    k.add_argument("input", nargs="+")
+    k.set_defaults(func=cmd_check)
+
+    v = sub.add_parser("version", help="显示版本")
+    v.set_defaults(func=cmd_version)
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    _utf8_when_piped()
+    argv = list(sys.argv[1:] if argv is None else argv)
+    parser = build_parser()
+    if not argv:
+        parser.print_help()
+        return 0
+    if argv[0] not in ("convert", "c", "check", "k", "version", "-V", "--version", "-h", "--help"):
+        argv = ["convert", *argv]
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

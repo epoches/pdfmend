@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pdfmend"
+version = "0.1.0"
+description = "PDF/DOCX/PPTX/XLSX to Markdown + Excel, with a confidence report. Chinese-first, local-only."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "pdfmend contributors" }]
+keywords = ["pdf", "markdown", "excel", "table", "ocr", "llm", "rag", "chinese"]
+dependencies = [
+  "pdfplumber>=0.11.0",
+  "python-docx>=1.1.0",
+  "openpyxl>=3.1.0",
+  "python-pptx>=0.6.23",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "fpdf2>=2.7"]
+
+[project.scripts]
+pdfmend = "pdfmend.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
