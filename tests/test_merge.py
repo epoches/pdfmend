@@ -56,6 +56,34 @@ def test_conflict_is_kept_and_supported_evidence_wins():
     assert item["conflicts"] and item["conflicts"][0]["value"] == 90000
 
 
+def test_conflict_winner_keeps_the_discarded_side_with_its_page():
+    """The *replaced* value must survive in ``conflicts`` with page and chunk.
+
+    Regression: on real 67-page output the winner path called a helper on the
+    merged entry (no ``page`` key) and raised KeyError, killing the whole run.
+    """
+    merged = merge.merge_fields(
+        [
+            _result("chunk_002", 7, {"合同金额": {"value": 90000, "evidence": "暂估九万元", "confidence": 0.95}}),
+            _result("chunk_009", 41, {"合同金额": {"value": 100000, "evidence": "合同总金额为人民币100000元", "confidence": 0.7}}),
+        ],
+        CONTRACT,
+    )
+    item = merged["合同金额"]
+    assert item["value"] == 100000
+    assert item["status"] == "conflict"
+    lost = item["conflicts"][0]
+    assert lost["value"] == 90000
+    assert lost["page"] == 7
+    assert lost["chunk_id"] == "chunk_002"
+
+
+def test_schema_text_spells_out_array_item_keys():
+    text = profiles.schema_text(profiles.load("resume"))
+    assert "工作经历 [array of {company, position, start_date, end_date, responsibilities}]" in text
+    assert "合同金额 [number (纯数字)]" in profiles.schema_text(CONTRACT)
+
+
 def test_missing_fields_and_page_search():
     doc = Document(path=Path("r.pdf"), kind="pdf", pages=62)
     doc.blocks = [

@@ -126,6 +126,8 @@ def merge_fields(results: list[dict], profile: dict) -> dict:
                     "normalized": cand["normalized"],
                     "confidence": cand["confidence"],
                     "evidence": cand["evidence"],
+                    "page": cand["page"],
+                    "chunk_id": cand["chunk_id"],
                     "source_pages": [cand["page"]] if cand["page"] else [],
                     "supporting": [cand],
                     "conflicts": [],
@@ -141,13 +143,17 @@ def merge_fields(results: list[dict], profile: dict) -> dict:
                 continue
             # Different value. A supported quote beats a confident guess, but a
             # conflict is recorded either way -- the user decides.
-            if _better(cand, old) :
-                old["conflicts"].append(_conflict_of(old))
+            if _better(cand, old):
+                # remember what we are discarding, with its own page/chunk
+                old["conflicts"].append(_conflict_of(old["supporting"][-1]))
                 old["value"] = cand["value"]
                 old["normalized"] = cand["normalized"]
                 old["confidence"] = cand["confidence"]
                 old["evidence"] = cand["evidence"]
+                old["page"] = cand["page"]
+                old["chunk_id"] = cand["chunk_id"]
                 old["source_pages"] = [cand["page"]] if cand["page"] else []
+                old["supporting"] = [cand]
             else:
                 old["conflicts"].append(_conflict_of(cand))
 
@@ -172,11 +178,11 @@ def _better(cand: dict, old: dict) -> bool:
 
 def _conflict_of(cand: dict) -> dict:
     return {
-        "value": cand["value"],
-        "confidence": round(cand["confidence"], 3),
-        "evidence": cand["evidence"],
-        "page": cand["page"],
-        "chunk_id": cand["chunk_id"],
+        "value": cand.get("value"),
+        "confidence": round(float(cand.get("confidence") or 0.0), 3),
+        "evidence": cand.get("evidence") or "",
+        "page": cand.get("page"),
+        "chunk_id": cand.get("chunk_id"),
     }
 
 

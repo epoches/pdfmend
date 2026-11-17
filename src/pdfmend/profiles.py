@@ -82,13 +82,26 @@ def field_names(profile: dict) -> list[str]:
 
 
 def schema_text(profile: dict) -> str:
-    """Human-readable field list used in prompts (kept small on purpose)."""
+    """Human-readable field list used in prompts (kept small on purpose).
+
+    Nested arrays spell out their item keys: without that, the model invents
+    its own key names ("公司"/"职位") and the JSON no longer matches the
+    template that downstream code expects.
+    """
     lines = []
     for name, spec in profile["fields"].items():
         kind = spec.get("type", "string")
+        shape = ""
+        item = spec.get("item")
+        if kind == "array" and isinstance(item, dict) and item:
+            shape = " of {" + ", ".join(item.keys()) + "}"
+        elif kind == "number":
+            shape = " (纯数字)"
+        elif kind == "date":
+            shape = " (YYYY-MM-DD)"
         hints = spec.get("hints") or []
         note = f"（线索词：{'、'.join(hints[:6])}）" if hints else ""
-        lines.append(f"- {name} [{kind}]{note}")
+        lines.append(f"- {name} [{kind}{shape}]{note}")
     return "\n".join(lines)
 
 

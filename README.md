@@ -255,7 +255,7 @@ v0.5 起文档分是六个可测维度（不可测的维度会丢弃，剩下的
 
 ```bash
 pip install -e ".[dev]"
-pytest                     # 100 个测试，含真实 PDF/DOCX/XLSX 夹具
+pytest                     # 102 个测试，含真实 PDF/DOCX/XLSX 夹具
 python examples/make_demo.py
 python examples/make_messy.py
 python examples/make_scan.py       # 合成扫描件，验证 OCR/--vision
