@@ -42,8 +42,8 @@ markitdown 是个好工具，我们在它上面省了很多时间。但它面向
 还没发 PyPI（v0.1），先源码安装：
 
 ```bash
-git clone <this repo>
-cd fileconverter
+git clone https://github.com/epoches/pdfmend.git
+cd pdfmend
 python -m venv .venv
 .venv\Scripts\activate        # Windows；macOS/Linux: source .venv/bin/activate
 pip install -e .
@@ -173,7 +173,7 @@ pdfmend report.pdf --strict 85
 
 `docs/why.md` 记录了完整推导：从百度下拉词、知乎/小红书原话，到 markitdown 的 272 个 table issue。结论是——**用户抱怨的不是慢和贵，是“转完是乱的”**。这个仓库先解决“可信”，再谈别的。
 
-如果你手上有把工具转崩的文件（脱敏后），欢迎开 issue 附上，失败样本比 star 有用。
+如果你手上有把工具转崩的文件（脱敏后），欢迎开 [issue](https://github.com/epoches/pdfmend/issues) 附上，失败样本比 star 有用。
 
 ## License
 
