@@ -50,31 +50,11 @@ jobs:
           "zip=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "sha256=$hash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      - name: Build installer (Inno Setup)
-        id: installer
-        continue-on-error: true
-        shell: pwsh
-        run: |
-          $url = "https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe"
-          $setup = Join-Path $env:RUNNER_TEMP "innosetup.exe"
-          Invoke-WebRequest -Uri $url -OutFile $setup -TimeoutSec 300
-          Start-Process -FilePath $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-" -Wait
-          $iscc = Get-ChildItem "C:\Program Files (x86)\Inno Setup 6\ISCC.exe", "C:\Program Files\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $iscc) { throw "ISCC.exe not found after installing Inno Setup" }
-          & $iscc.FullName "/DAppVersion=${{ steps.pack.outputs.version }}" packaging\installer.iss
-          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
-          $exe = Get-ChildItem "dist\*setup*.exe" | Select-Object -First 1
-          if (-not $exe) { throw "installer exe was not produced" }
-          "installer=$($exe.Name)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          $exe | Select-Object Name, Length
-
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: PDFMend-windows-x64
-          path: |
-            dist/*.zip
-            dist/*setup*.exe
+          path: dist/*.zip
 
       - name: Attach to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
@@ -83,15 +63,14 @@ jobs:
           tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v{0}', steps.pack.outputs.version) }}
           name: PDFMend ${{ steps.pack.outputs.version }}
           body: |
-            Windows 10/11 x64，二选一：
-            - 解压即用：下载 zip，双击 `PDFMend.exe`（无需安装 Python）
-            - 安装版：下载 `PDFMend-${{ steps.pack.outputs.version }}-setup-x64.exe`，装到当前用户，自动建开始菜单项
+            Windows 10/11 x64，解压即用（无需安装 Python）。
 
             文件：${{ steps.pack.outputs.zip }}
             SHA256：`${{ steps.pack.outputs.sha256 }}`
 
             标准版 = 本地解析 + Markdown/Excel/JSON/HTML 导出 + 质量报告 + AI 字段抽取（自带 Key）。
             OCR 版单独发布（体积大，含 PaddleOCR）。
+            安装版（setup.exe）走 `installer` 工作流单独产出，见 packaging/README.md。
           files: |
             dist/*.zip
             dist/*setup*.exe
