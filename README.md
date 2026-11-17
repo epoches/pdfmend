@@ -101,9 +101,40 @@ pdfmend fields 扫描件.pdf --schema s.json --provider qwen --vision  # Qwen3-V
 
 key 的规矩：只从环境变量读（`DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY` / `PDFMEND_LLM_API_KEY`），错误信息里自动打码，`.env` 已加入 `.gitignore`；`tests/test_secrets.py` 会扫全仓库的疑似真 key。示例见 [.env.example](.env.example)。
 
+## V2：长文档分块抽取 + 文档结构（v0.5，可选）
+
+v0.4 之前 `fields` 只把全文前 12000 字符发给模型，67 页研报里靠后的「研究机构」永远抽不到。v0.5 把这件事拆成三步：**结构识别 → 分块抽取 → 合并补查**。
+
+```bash
+pdfmend structure 合同.pdf                     # 看结构：标题/段落/项目符号/条款/表格
+pdfmend structure 合同.pdf --json              # 结构树 JSON（Markdown/HTML/JSON 同源）
+pdfmend fields 合同.pdf --profile contract      # 用内置模板（resume/contract/research_report/default）
+pdfmend fields 研报.pdf --profile research_report
+pdfmend fields 研报.pdf --profile research_report --no-chunk   # 退回整篇一次（调试用）
+```
+
+**结构识别**（规则 + 坐标，不靠大模型）：标题层级（字号比 + 第X章/节/条 + 一、）、项目符号（包括符号单独占一块、缩进连续、同行多个符号）、有序列表、条款 `1.1`、多栏阅读顺序、页眉页脚剔除。扫描页走 PaddleOCR 的框坐标，走同一套规则。
+
+**分块抽取**：按页对齐切块（默认目标 6500 字符、上限 8000），块间重叠只作为「上文参考」不计入本块；每块单独调用模型，要求返回 `value / evidence / source_page / confidence`。
+
+**合并**：同值合并证据与页码；不同值不是「取置信最高」，而是先看证据能否支持（日期按数字比对、金额按数值比对、字符串按子串），支持不了就记 `conflict`；合并后仍缺的字段，用模板里的线索词（如「研究所」「出品」）回查命中页，做第二轮定向抽取。
+
+**输出**（`<文件名>.fields.json`）：
+
+```json
+{
+  "profile": "contract", "chunked": true, "pages": 1, "chunks": 1, "passes": 2,
+  "fields": {"合同名称": "技术服务合同", "合同金额": 100000},
+  "evidence": {"合同名称": {"status": "ok", "source_pages": [1], "evidence": "技术服务合同", "confidence": 0.95}},
+  "quality": {"score": 88, "verdict": "需抽查"}
+}
+```
+
+边界：证据由模型给出，可能张冠李戴，金额、日期、甲乙方务必对照原件；`（1）（2）（3）` 这类子列表目前并进条款正文，没有拆成嵌套列表；扫描件的表格仍然只出文字行。
+
 ## 安装
 
-还没发 PyPI（v0.4），先源码安装：
+还没发 PyPI（v0.5），先源码安装：
 
 ```bash
 git clone https://github.com/epoches/pdfmend.git
@@ -194,6 +225,15 @@ confidence = 0.45 × 填充率
 
 文档级：≥85 可直接用，≥60 建议抽查，否则人工复核。**这是启发式，不是测量** —— 它宁可保守地喊一声，也不假装 100% 正确。
 
+v0.5 起文档分是六个可测维度（不可测的维度会丢弃，剩下的重新归一）：
+
+```
+文字完整性 20 + 表格识别 20 + 段落结构 20
++ 阅读顺序 15 + 字段抽取 15 + OCR 质量 10 = 100
+```
+
+结构维度查的是可验证的事实：最长段落有没有超过 500 字（段落被吞）、出现多个列表符号却没有列表结构、出现「第X条」却没有条款结构、多页文档正文超过 1500 字却没有一个标题。
+
 ## 明确不做的事
 
 - **不默认做 OCR。** 默认安装不碰 OCR；扫描件/图片页会检测出来并点名页码。装了 `pdfmend[ocr]` 并加 `--ocr auto` 才识别，且结果标注来源。
@@ -215,10 +255,11 @@ confidence = 0.45 × 填充率
 
 ```bash
 pip install -e ".[dev]"
-pytest                     # 73 个测试，含真实 PDF/DOCX/XLSX 夹具
+pytest                     # 100 个测试，含真实 PDF/DOCX/XLSX 夹具
 python examples/make_demo.py
 python examples/make_messy.py
 python examples/make_scan.py       # 合成扫描件，验证 OCR/--vision
+python examples/make_contract.py   # 合成合同，验证条款/编号/列表结构
 python examples/benchmark_vs_markitdown.py
 ```
 
@@ -233,6 +274,7 @@ python examples/benchmark_vs_markitdown.py
 - Chinese-first: two-level headers, CJK text, and `1,234,500.00` are first-class cases.
 - Local by default: files never leave your machine, no API keys needed.
 - Optional v0.3–v0.4: `pdfmend[ocr]` adds OpenCV cleanup + PaddleOCR for scanned pages; `pdfmend fields` extracts JSON fields with DeepSeek / Qwen-VL (key from env only, `--dry-run` to inspect the payload); `--vision` sends the first pages as images for scans and stamps.
+- v0.5 adds **structure and long documents**: headings, bullet lists, numbered lists and contract clauses are recovered as structure (`pdfmend structure`), long PDFs are chunked page-by-page and merged with per-field evidence and page numbers, and `--profile resume|contract|research_report` ships the field templates in-repo as JSON.
 - v0.2 recovers **non-standard layouts**: rule-less tables (whitespace-only columns), multi-column prose read in column order, repeated running heads/footers dropped, and a table split across pages merged back into one (`continued`).
 - It does **not** round-trip back into PDF, guess OCR results silently, or read legacy `.doc/.xls`.
 

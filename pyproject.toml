@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pdfmend"
-version = "0.4.1"
+version = "0.5.0"
 description = "PDF/DOCX/PPTX/XLSX to Markdown + Excel, with a confidence report. Chinese-first, local-only."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -37,6 +37,9 @@ pdfmend = "pdfmend.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+pdfmend = ["profiles/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

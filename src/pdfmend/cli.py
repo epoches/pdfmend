@@ -7,7 +7,7 @@ import json
 import sys
 from pathlib import Path
 
-from pdfmend import __version__, fields, llm
+from pdfmend import __version__, fields, llm, structure
 from pdfmend.extract import extract
 from pdfmend.quality import score_document
 from pdfmend.render import to_json, to_markdown, to_xlsx, write_html
@@ -145,9 +145,13 @@ def cmd_fields(args: argparse.Namespace) -> int:
     if not src.is_file():
         _p(f"找不到文件：{src}")
         return 1
+    if not args.schema and not args.profile:
+        _p("需要 --profile（resume/contract/research_report/default）或 --schema 文件")
+        return 1
+    schema_path = Path(args.schema) if args.schema else None
     try:
-        messages = fields.build_messages(
-            src, fields.load_schema(Path(args.schema)), ocr=args.ocr, vision=args.vision
+        messages = fields.dry_run_messages(
+            src, schema_path, profile=args.profile, ocr=args.ocr, vision=args.vision
         )
     except (ValueError, OSError) as exc:
         _p(f"失败：{exc}")
@@ -161,22 +165,58 @@ def cmd_fields(args: argparse.Namespace) -> int:
     try:
         target = fields.run(
             src,
-            Path(args.schema),
+            schema_path,
+            profile=args.profile,
             out=Path(args.out) if args.out else None,
             provider=args.provider,
             model=args.model,
             ocr=args.ocr,
             vision=args.vision,
+            chunk=args.chunk,
         )
     except (llm.LLMError, ValueError, OSError) as exc:
         _p(f"失败：{exc}")
         return 2
     cfg = llm.config_from_env(args.provider, args.model)
+    data = json.loads(target.read_text(encoding="utf-8"))
+    stats = data.get("stats", {})
     _p(f"{src.name} -> {target.name}")
+    _p(f"  · 模板 {data.get('profile')}，{stats.get('pages', '?')} 页 / {stats.get('chunks', '?')} 块，"
+       f"{stats.get('passes', 1)} 轮抽取")
+    _p(f"  · 字段 {stats.get('found', 0)}/{stats.get('fields', 0)} 找到，"
+       f"{stats.get('conflicts', 0)} 处冲突，质量分 {data.get('quality', {}).get('score', '?')}")
+    for name in stats.get("missing") or []:
+        _p(f"  · 未找到：{name}")
     _p(f"  · {cfg.describe()}")
     if args.vision:
-        _p("  · 已把前 3 页图片发给模型（图片不会留在本地之外，但确实发到了服务商）")
+        _p("  · 已把首页图片发给模型（图片确实发到了服务商）")
     _p("  · 字段由模型生成，金额与日期请对照原件核验")
+    return 0
+
+
+def cmd_structure(args: argparse.Namespace) -> int:
+    src = Path(args.input)
+    if not src.is_file():
+        _p(f"找不到文件：{src}")
+        return 1
+    try:
+        doc = extract(src, ocr=args.ocr)
+    except Exception as exc:  # noqa: BLE001
+        _p(f"{src.name}: 失败 — {type(exc).__name__}: {exc}")
+        return 2
+    counts = structure.counts(doc.blocks)
+    _p(f"{src.name}  第 {doc.pages} 页 / {len(doc.blocks)} 个块")
+    for kind, number in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
+        _p(f"  {kind:<14} {number}")
+    if args.json:
+        _p(json.dumps(doc.structure or {}, ensure_ascii=False, indent=2))
+        return 0
+    for block in doc.blocks:
+        if block.kind == "heading":
+            indent = "  " * max(0, (block.level or 1) - 1)
+            _p(f"{indent}# {block.text}")
+        elif block.kind in ("bullet_list", "numbered_list"):
+            _p(f"  - 列表 x{len(block.items or [])}：{(block.items or [''])[0][:50]}")
     return 0
 
 
@@ -227,18 +267,35 @@ def build_parser() -> argparse.ArgumentParser:
 
     f = sub.add_parser("fields", help="用 LLM 把文档抽成 JSON 字段（需要 API key）")
     f.add_argument("input", help="文件（.pdf .docx .xlsx .pptx）")
-    f.add_argument("--schema", required=True, help="JSON schema 文件，键=字段名")
+    f.add_argument("--schema", help="JSON schema 文件，键=字段名（自定义字段时用）")
+    f.add_argument(
+        "--profile",
+        choices=("resume", "contract", "research_report", "default"),
+        help="文档模板：简历 / 合同 / 研报 / 通用；与 --schema 二选一",
+    )
     f.add_argument("--provider", choices=("deepseek", "qwen", "openai"), help="默认 deepseek")
     f.add_argument("--model", help="覆盖模型名")
     f.add_argument("--ocr", choices=("auto", "always", "never"), default="auto")
     f.add_argument("-o", "--out", help="输出路径（默认 <文件名>.fields.json）")
     f.add_argument(
+        "--no-chunk",
+        dest="chunk",
+        action="store_false",
+        help="不分块，整篇一次发给模型（短文档才用；长文档会丢靠后的字段）",
+    )
+    f.add_argument(
         "--vision",
         action="store_true",
-        help="把前 3 页图片也发给模型（Qwen3-VL / GPT-4o 这类视觉模型，扫描件推荐）",
+        help="把首页图片也发给模型（Qwen3-VL / GPT-4o 这类视觉模型，扫描件推荐）",
     )
     f.add_argument("--dry-run", action="store_true", help="只打印将要发送的内容，不调用 API")
-    f.set_defaults(func=cmd_fields)
+    f.set_defaults(func=cmd_fields, chunk=True)
+
+    s = sub.add_parser("structure", help="只打印识别出的结构（标题/列表/条款）")
+    s.add_argument("input")
+    s.add_argument("--ocr", choices=("auto", "always", "never"), default="auto")
+    s.add_argument("--json", action="store_true", help="输出完整结构树 JSON")
+    s.set_defaults(func=cmd_structure)
 
     v = sub.add_parser("version", help="显示版本")
     v.set_defaults(func=cmd_version)
@@ -253,7 +310,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
     if argv[0] not in (
-        "convert", "c", "check", "k", "fields", "version", "-V", "--version", "-h", "--help"
+        "convert", "c", "check", "k", "fields", "structure", "version",
+        "-V", "--version", "-h", "--help",
     ):
         argv = ["convert", *argv]
     args = parser.parse_args(argv)

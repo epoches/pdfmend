@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from . import structure
 from .model import Block, Document, Table
 
 CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
@@ -215,6 +216,21 @@ def _same_row(a: list[str], b: list[str]) -> bool:
     return all("".join(x.split()).lower() == "".join(y.split()).lower() for x, y in zip(a, b))
 
 
+def _promote_title(doc: Document) -> None:
+    """The largest heading on the first page is the document title, level 1.
+
+    A 16pt title over 10pt body is only 1.6x, which the size rule can read as a
+    section heading once other 12pt headings pull the median up.
+    """
+    headings = [b for b in doc.blocks if b.kind == "heading" and b.text]
+    if not headings:
+        return
+    first = headings[0]
+    biggest = max((b.size or 0.0) for b in headings)
+    if (first.size or 0.0) >= biggest and first.level > 1:
+        first.level = 1
+
+
 def _merge_continued(pages: list[dict]) -> set[str]:
     """Join a table that continues on the next page (header repeated).
 
@@ -320,6 +336,7 @@ def _pdf(path: Path, ocr: str = "never") -> Document:
                     "paras": paras,
                     "tables": tables,
                     "height": page.height or 1.0,
+                    "width": page.width or 1.0,
                 }
             )
             doc.tables.extend(tables)
@@ -330,22 +347,55 @@ def _pdf(path: Path, ocr: str = "never") -> Document:
         doc.tables = [t for t in doc.tables if t.id not in merged]
 
     text_parts: list[str] = []
+    para_sizes: list[float] = []
     for p in pages:
-        doc.blocks.append(Block(kind="page", page=p["no"]))
-        items: list[tuple[float, Block]] = []
         for para in p["paras"]:
             if layout.normalise_running_head(para["text"]) in heads:
                 continue
-            items.append((para["top"], Block(kind="para", text=para["text"], page=p["no"])))
             text_parts.append(para["text"])
+            if para.get("size"):
+                para_sizes.append(float(para["size"]))
+    body_size = layout._median(para_sizes, 10.0) if para_sizes else 10.0
+    doc.meta["body_size"] = round(body_size, 2)
+    multi_pages = 0
+    order_violations = 0
+
+    for p in pages:
+        doc.blocks.append(Block(kind="page", page=p["no"]))
+        items: list[tuple[float, int, Block]] = []
+        kept = [para for para in p["paras"] if layout.normalise_running_head(para["text"]) not in heads]
+        columns = 1 + max((int(para.get("col") or 0) for para in kept), default=0)
+        if columns > 1:
+            doc.meta.setdefault("columns", {})[p["no"]] = columns
+        for block in structure.classify(kept, body_size, page=p["no"], source="pdf"):
+            col = 0
+            if columns > 1:
+                col = 0 if (block.x0 or 0.0) < 0.5 * p["width"] else 1
+            items.append((col, block.top or 0.0, block))
         for t in p["tables"]:
             if t.id in merged:
                 continue
             top = t.bbox[1] if t.bbox else p["height"]
-            items.append((top, Block(kind="table", table=t, page=t.page)))
+            col = 0
+            if columns > 1 and t.bbox:
+                col = 0 if (t.bbox[0] + t.bbox[2]) / 2 < 0.5 * p["width"] else 1
+            items.append((col, top, Block(kind="table", table=t, page=t.page)))
             text_parts.extend(c for r in t.rows for c in r)
-        items.sort(key=lambda it: it[0])
-        doc.blocks.extend(b for _, b in items)
+        items.sort(key=lambda it: (it[0], it[1]))
+        if columns > 1:
+            multi_pages += 1
+            # a page we called multi-column must actually yield two groups,
+            # otherwise the split was a false positive and the order is suspect
+            groups = {it[0] for it in items}
+            if len(groups) < 2 and len(items) > 3:
+                order_violations += 1
+        doc.blocks.extend(b for _, _, b in items)
+
+    doc.structure = structure.tree(doc.blocks)
+    doc.meta["structure"] = structure.counts(doc.blocks)
+    _promote_title(doc)
+    if multi_pages:
+        doc.meta["reading_order"] = {"multi": multi_pages, "violations": order_violations}
 
     text = "\n".join(text_parts)
     doc.text_chars = len(text)
@@ -368,6 +418,16 @@ def _docx(path: Path) -> Document:
     d = docx.Document(str(path))
     idx = 0
     text = []
+    list_kind = ""
+    list_items: list[str] = []
+
+    def flush_list() -> None:
+        nonlocal list_kind, list_items
+        if list_items:
+            doc.blocks.append(Block(kind=list_kind or "bullet_list", items=list(list_items), source="docx"))
+            list_items = []
+            list_kind = ""
+
     for child in d.element.body.iterchildren():
         if child.tag == qn("w:p"):
             p = Paragraph(child, d)
@@ -376,15 +436,27 @@ def _docx(path: Path) -> Document:
                 continue
             style = (p.style.name or "").lower()
             if style.startswith("heading"):
+                flush_list()
                 m = re.search(r"(\d+)", style)
-                doc.blocks.append(Block(kind="heading", text=t, level=int(m.group(1)) if m else 1))
+                doc.blocks.append(Block(kind="heading", text=t, level=int(m.group(1)) if m else 1,
+                                        source="docx"))
             elif style in ("title", "subtitle"):
-                doc.blocks.append(Block(kind="heading", text=t, level=1))
+                flush_list()
+                doc.blocks.append(Block(kind="heading", text=t, level=1, source="docx"))
+            elif style.startswith("list"):
+                # Word's own list styles already tell us the structure; grouping
+                # them here keeps Markdown output as real lists, not "- " text.
+                kind = "numbered_list" if "number" in style else "bullet_list"
+                if list_kind and kind != list_kind:
+                    flush_list()
+                list_kind = kind
+                list_items.append(_strip_bullet(t))
             else:
-                prefix = "- " if style.startswith("list") else ""
-                doc.blocks.append(Block(kind="para", text=prefix + t))
+                flush_list()
+                doc.blocks.append(Block(kind="para", text=t, source="docx"))
             text.append(t)
         elif child.tag == qn("w:tbl"):
+            flush_list()
             tbl = DocxTable(child, d)
             rows = []
             seen = set()
@@ -404,10 +476,17 @@ def _docx(path: Path) -> Document:
                 t = Table(id=f"t{idx}", rows=rows, origin="docx")
                 doc.tables.append(t)
                 doc.blocks.append(Block(kind="table", table=t))
+    flush_list()
     doc.text_chars = sum(len(t) for t in text)
     doc.cjk_chars = len(CJK_RE.findall("".join(text)))
     doc.damaged_chars = _damaged("".join(text))
+    doc.meta["structure"] = structure.counts(doc.blocks)
+    doc.structure = structure.tree(doc.blocks)
     return doc
+
+
+def _strip_bullet(text: str) -> str:
+    return re.sub(r"^\s*(?:[•●○▪◦■□◆◇✓✔☑·]|[-–—*]|\d+[.)、])\s*", "", text)
 
 
 def _xlsx(path: Path) -> Document:

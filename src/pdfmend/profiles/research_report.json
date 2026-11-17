@@ -1,0 +1,20 @@
+{
+  "name": "research_report",
+  "document_type": "research_report",
+  "title": "研究报告",
+  "description": "券商研报/行业报告：标题、机构、日期常在页眉页脚，评级与目标价在结论摘要里，结论后置的字段必须靠分块抽到。",
+  "fields": {
+    "报告标题": {"type": "string", "hints": ["报告", "研究", "标题"]},
+    "研究机构": {"type": "string", "hints": ["研究所", "证券", "研究机构", "出品", "分析师"]},
+    "报告日期": {"type": "date", "hints": ["报告日期", "发布日期", "日期"]},
+    "作者": {"type": "string", "hints": ["作者", "分析师", "执业证书"]},
+    "行业": {"type": "string", "hints": ["行业", "板块"]},
+    "公司名称": {"type": "string", "hints": ["公司", "标的", "简称"]},
+    "证券代码": {"type": "string", "hints": ["代码", "证券代码", "股票代码"]},
+    "投资评级": {"type": "string", "hints": ["评级", "买入", "增持", "中性", "减持", "规避"]},
+    "目标价": {"type": "number", "hints": ["目标价", "目标价格"]},
+    "核心结论": {"type": "string", "hints": ["结论", "摘要", "核心观点"]},
+    "风险提示": {"type": "array", "hints": ["风险", "风险提示"]}
+  },
+  "structure": {"expect_headings": true}
+}

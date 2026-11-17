@@ -320,39 +320,86 @@ def _row_text(row: Row) -> str:
     return text
 
 
+# Bullet glyphs at the start of a line mean a new list item, never a
+# continuation of the previous paragraph.
+BULLET_START = re.compile(
+    r"^\s*(?:[•●○▪◦■□◆◇✓✔☑·]\s*|[-–—*]\s+)(?=\S)"
+)
+LONE_BULLET = re.compile(r"^\s*[•●○▪◦■□◆◇✓✔☑·]\s*$")
+# A line starting with a year is a new CV entry ("2022.03—2024.06 某公司"),
+# never a continuation of the bullet above it.
+ENTRY_START = re.compile(r"^\s*(?:19|20)\d{2}\s*[.\-/年]")
+# "合同编号：…" / "甲方：" / "TEL:" -- a label line holds one field, so joining
+# it to the next label produces "合同编号：HT-001甲方：某公司".
+LABEL_START = re.compile(r"^\s*[\u4e00-\u9fffA-Za-z][^：:，。；]{0,10}[：:]")
+
+
 def _paragraphs(rows_: list[Row], gap_factor: float = 1.5) -> list[dict]:
-    """Join consecutive rows into paragraphs, keeping their vertical extent."""
+    """Join consecutive rows into paragraphs, keeping their vertical extent.
+
+    Three things end a paragraph early, because they *are* structure:
+
+    * a vertical gap wider than normal leading,
+    * a font-size change (a heading is bigger than the body it introduces),
+    * a line that starts with a bullet glyph.
+    """
     out: list[dict] = []
     buf: list[Run] = []
     top = bottom = None
     prev_bottom = None
     prev_height = 0.0
+    prev_size = 0.0
+    pending_bullet = ""
     for row in rows_:
         if not row.runs:
             continue
+        text = _row_text(row)
+        size = _median([c.get("size") or 10 for c in row.chars])
+        if LONE_BULLET.match(text):
+            pending_bullet = "•"
+            continue
+        if pending_bullet:
+            text = f"• {text}"
+            pending_bullet = ""
         if buf and prev_bottom is not None:
             gap = row.top - prev_bottom
             limit = gap_factor * max(prev_height, row.height)
-            if gap > limit:
-                out.append({"text": _join_runs(buf), "top": top, "bottom": bottom})
+            size_jump = prev_size and abs(size - prev_size) > 0.12 * max(size, prev_size)
+            if gap > limit or size_jump or BULLET_START.match(text) or ENTRY_START.match(text) \
+                    or LABEL_START.match(text):
+                out.append({"text": _join_runs(buf), "top": top, "bottom": bottom,
+                            "size": prev_size, "x0": _min_x(buf)})
                 buf = []
                 top = bottom = None
-        buf.append(Run(_row_text(row), min(r.x0 for r in row.runs), max(r.x1 for r in row.runs), row.top, row.bottom))
+                prev_size = 0.0
+        buf.append(Run(text, min(r.x0 for r in row.runs), max(r.x1 for r in row.runs), row.top, row.bottom))
         top = row.top if top is None else min(top, row.top)
         bottom = row.bottom if bottom is None else max(bottom, row.bottom)
         prev_bottom = row.bottom
         prev_height = row.height
+        prev_size = size
     if buf:
-        out.append({"text": _join_runs(buf), "top": top, "bottom": bottom})
+        out.append({"text": _join_runs(buf), "top": top, "bottom": bottom,
+                    "size": prev_size, "x0": _min_x(buf)})
     return [p for p in out if p["text"].strip()]
 
 
+def _min_x(runs: list[Run]) -> float:
+    return min((r.x0 for r in runs), default=0.0)
+
+
 def body_blocks(chars, page_width: float) -> list[dict]:
-    """Reading-order paragraphs for a page's prose (tables already removed)."""
+    """Reading-order paragraphs for a page's prose (tables already removed).
+
+    Each paragraph carries ``col`` so callers can keep column order instead of
+    re-sorting by vertical position (which would interleave the columns).
+    """
     rows_ = rows(chars)
     out: list[dict] = []
-    for column in reading_columns(rows_, page_width):
-        out.extend(_paragraphs(column))
+    for index, column in enumerate(reading_columns(rows_, page_width)):
+        for para in _paragraphs(column):
+            para["col"] = index
+            out.append(para)
     return out
 
 

@@ -1,0 +1,32 @@
+{
+  "name": "resume",
+  "document_type": "resume",
+  "title": "简历",
+  "description": "简历/履历：按个人信息、教育、经历、技能分节，经历拆成对象数组而不是一整段。",
+  "fields": {
+    "姓名": {"type": "string", "hints": ["姓名", "名字"]},
+    "手机号码": {"type": "string", "hints": ["电话", "手机", "联系方式"]},
+    "邮箱": {"type": "string", "hints": ["邮箱", "email", "e-mail"]},
+    "性别": {"type": "string", "hints": ["性别"]},
+    "出生日期": {"type": "date", "hints": ["出生", "生日"]},
+    "求职意向": {"type": "string", "hints": ["求职意向", "应聘", "目标岗位"]},
+    "工作年限": {"type": "string", "hints": ["工作年限", "经验"]},
+    "最高学历": {"type": "string", "hints": ["学历", "硕士", "本科"]},
+    "毕业院校": {"type": "string", "hints": ["毕业院校", "学校", "大学"]},
+    "专业": {"type": "string", "hints": ["专业"]},
+    "工作经历": {
+      "type": "array",
+      "hints": ["工作经历", "实习经历", "任职", "公司"],
+      "item": {"company": "string", "position": "string", "start_date": "string",
+               "end_date": "string", "responsibilities": "array"}
+    },
+    "项目经历": {
+      "type": "array",
+      "hints": ["项目经历", "项目"],
+      "item": {"name": "string", "role": "string", "description": "string", "highlights": "array"}
+    },
+    "专业技能": {"type": "array", "hints": ["技能", "证书", "专业能力"]},
+    "自我评价": {"type": "string", "hints": ["自我评价", "个人评价"]}
+  },
+  "structure": {"expect_headings": true, "expect_lists": true}
+}

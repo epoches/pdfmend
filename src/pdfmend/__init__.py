@@ -1,3 +1,3 @@
 """pdfmend — turn documents into Markdown and Excel, and be honest about what broke."""
 
-__version__ = "0.4.1"
+__version__ = "0.5.0"

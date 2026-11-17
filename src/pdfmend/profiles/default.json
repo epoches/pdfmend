@@ -1,0 +1,15 @@
+{
+  "name": "default",
+  "document_type": "document",
+  "title": "通用文档",
+  "description": "没有专用模板时使用：只抽文档里通常最值得结构化出来的字段。",
+  "fields": {
+    "文档标题": {"type": "string", "hints": ["标题", "题目"]},
+    "日期": {"type": "date", "hints": ["日期"]},
+    "机构或公司": {"type": "string", "hints": ["公司", "单位", "机构"]},
+    "金额": {"type": "number", "hints": ["金额", "合计", "总价"]},
+    "联系人": {"type": "string", "hints": ["联系人", "姓名"]},
+    "关键结论": {"type": "string", "hints": ["结论", "摘要", "要点"]}
+  },
+  "structure": {"expect_headings": true}
+}

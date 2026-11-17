@@ -13,6 +13,12 @@ MONEY_PREFIX = "¥$€£"
 PLAIN_NUM = re.compile(r"^[¥$€£]?\s*[-+]?\d{1,3}(,\d{3})*(\.\d+)?$|^[¥$€£]?\s*[-+]?\d+(\.\d+)?$")
 PERCENT = re.compile(r"^([-+]?\d+(?:\.\d+)?)\s*%$")
 BAD_SHEET = re.compile(r"[\\/*?:\[\]]")
+LIST_MARKER = re.compile(r"^\s*(?:\d{1,3}[.)、]|[一二三四五六七八九十]+[、.])\s*")
+
+
+def _strip_marker(item: str) -> str:
+    """Items keep their original marker ("1. …"); Markdown adds its own."""
+    return LIST_MARKER.sub("", str(item), count=1).strip()
 
 
 def _cell(value: str) -> str:
@@ -82,6 +88,21 @@ def to_markdown(report: Report) -> str:
             out.append("")
         elif block.kind == "para":
             out.append(block.text)
+            out.append("")
+        elif block.kind == "bullet_list":
+            for item in block.items:
+                out.append(f"- {item}")
+            out.append("")
+        elif block.kind == "numbered_list":
+            for i, item in enumerate(block.items, 1):
+                out.append(f"{i}. {_strip_marker(item)}")
+            out.append("")
+        elif block.kind == "clause":
+            prefix = f"{block.number} " if block.number else ""
+            out.append(prefix + block.text)
+            out.append("")
+        elif block.kind == "quote":
+            out.append("> " + block.text)
             out.append("")
         elif block.kind == "table" and block.table:
             t = block.table
@@ -276,6 +297,20 @@ def to_html(report: Report) -> str:
         elif block.kind == "para":
             for line in block.text.splitlines():
                 parts.append(f"<p>{html.escape(line)}</p>")
+        elif block.kind in ("bullet_list", "numbered_list"):
+            tag = "ul" if block.kind == "bullet_list" else "ol"
+            parts.append(f"<{tag}>")
+            for item in block.items:
+                label = item
+                if block.kind == "numbered_list":
+                    label = re.sub(r"^\d+[.)]\s*", "", item)
+                parts.append(f"<li>{html.escape(label)}</li>")
+            parts.append(f"</{tag}>")
+        elif block.kind == "clause":
+            num = html.escape(block.number) + ". " if block.number else ""
+            parts.append(f"<p class='clause'>{num}{html.escape(block.text)}</p>")
+        elif block.kind == "quote":
+            parts.append(f"<blockquote>{html.escape(block.text)}</blockquote>")
         elif block.kind == "table" and block.table:
             t = block.table
             badge = "ok" if t.confidence >= 0.85 else ("warn" if t.confidence >= 0.6 else "bad")

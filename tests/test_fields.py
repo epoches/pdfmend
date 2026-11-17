@@ -67,16 +67,16 @@ def test_cli_ocr_flag_is_accepted(sample_docx):
 
 def test_vision_attaches_page_images_without_dumping_them(sample_pdf, schema_file, monkeypatch):
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test-key-123")
-    seen = {}
+    seen = {"contents": []}
 
     def fake_chat(messages, cfg=None, **kwargs):
-        seen["content"] = messages[-1]["content"]
+        seen["contents"].append(messages[-1]["content"])
         return '{"title": "x"}'
 
     monkeypatch.setattr(llm, "chat", fake_chat)
-    fields.run(sample_pdf, schema_file, provider="deepseek", vision=True)
-    parts = seen["content"]
-    assert isinstance(parts, list) and parts[0]["type"] == "text"
+    fields.run(sample_pdf, schema_file, provider="deepseek", vision=True, second_pass=False)
+    parts = [c for c in seen["contents"] if isinstance(c, list)][0]
+    assert parts[0]["type"] == "text"
     images = [p for p in parts if p["type"] == "image_url"]
     assert images and images[0]["image_url"]["url"].startswith("data:image/png;base64,")
 

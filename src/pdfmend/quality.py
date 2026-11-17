@@ -204,6 +204,7 @@ def score_document(doc: Document) -> Report:
             f"OCR 未完成（{len(ocr_errors)} 页）：{first}；这些页仍按「没有文本层」处理"
         )
 
+    table_score = None
     if doc.tables:
         weight = sum(max(1, t.n_rows) for t in doc.tables)
         table_score = sum(t.confidence * max(1, t.n_rows) for t in doc.tables) / weight
@@ -215,11 +216,32 @@ def score_document(doc: Document) -> Report:
             reasons.append(
                 f"{len(sparse)} 张表有大量空白格（单元格换行或纵向合并被拆开），建议对照原文件抽查"
             )
-        score = 100 * (0.75 * table_score + 0.25 * text_health)
-    else:
-        if doc.text_chars == 0:
-            reasons.append("没有提取到任何文本")
-        score = 100 * text_health
+    elif doc.text_chars == 0:
+        reasons.append("没有提取到任何文本")
+
+    structure_score, structure_notes = _structure_score(doc)
+    reasons.extend(structure_notes)
+    order_score = _reading_order_score(doc)
+    field_score, field_notes = _field_score(doc)
+    reasons.extend(field_notes)
+    ocr_score = max(0.0, 1.0 - 0.6 * scan_ratio - 0.15 * len(ocr_pages) / max(1, doc.pages))
+
+    dims = {
+        "text": {"score": round(text_health, 3), "weight": 20},
+        "table": {"score": None if table_score is None else round(table_score, 3), "weight": 20},
+        "structure": {"score": None if structure_score is None else round(structure_score, 3),
+                      "weight": 20},
+        "reading_order": {"score": None if order_score is None else round(order_score, 3),
+                          "weight": 15},
+        "fields": {"score": None if field_score is None else round(field_score, 3), "weight": 15},
+        "ocr": {"score": round(ocr_score, 3), "weight": 10},
+    }
+    # Dimensions that cannot be observed (no table, no paragraphs, no extraction)
+    # are dropped and their weight is redistributed instead of scoring 0.
+    measurable = {k: v for k, v in dims.items() if v["score"] is not None}
+    weight = sum(v["weight"] for v in measurable.values())
+    score = 100 * sum(v["score"] * v["weight"] for v in measurable.values()) / max(1, weight)
+    dims["total"] = {"score": round(score / 100, 3), "weight": 100}
 
     score = int(round(max(0, min(100, score))))
     if score >= 85:
@@ -231,4 +253,81 @@ def score_document(doc: Document) -> Report:
     if not reasons:
         reasons.append("未发现明显问题")
 
-    return Report(document=doc, score=score, verdict=verdict, reasons=reasons, tables=doc.tables)
+    return Report(document=doc, score=score, verdict=verdict, reasons=reasons,
+                  tables=doc.tables, dimensions=dims)
+
+
+LONG_PARAGRAPH = 500
+_BULLETISH = re.compile(r"^\s*(?:[•●○▪◦■□◆◇·]|[-–—*]|\d{1,3}[.)、])\s+\S")
+_CLAUSEISH = re.compile(r"^\s*第[一二三四五六七八九十百零\d]+条")
+
+
+def _structure_score(doc: Document) -> tuple[float | None, list[str]]:
+    """Does the output keep the document's structure, not just its characters?
+
+    This is the dimension that catches the real failure from docs/why.md: a
+    resume where every line is present but the whole body is one paragraph gets
+    100/100 on a text-only check.  Every rule below is a countable property of
+    the output, never a model's opinion.
+    """
+    blocks = [b for b in doc.blocks if b.kind != "page"]
+    paras = [b for b in blocks if b.kind == "para"]
+    headings = [b for b in blocks if b.kind == "heading"]
+    lists = [b for b in blocks if b.kind in ("bullet_list", "numbered_list")]
+    clauses = [b for b in blocks if b.kind == "clause"]
+    if not blocks:
+        return None, []
+
+    notes: list[str] = []
+    score = 1.0
+    longest = max((len(b.text) for b in paras), default=0)
+    if longest > LONG_PARAGRAPH:
+        over = (longest - LONG_PARAGRAPH) / 2000.0
+        score -= min(0.45, 0.15 + 0.30 * over)
+        notes.append(
+            f"最长段落 {longest} 字且没有分段：可能是多段被合并，建议对照原文检查段落结构"
+        )
+    bullet_lines = [b for b in paras if _BULLETISH.match(b.text)]
+    if len(bullet_lines) >= 2 and not lists:
+        score -= 0.25
+        notes.append(f"检测到 {len(bullet_lines)} 处列表符号但没有列表结构，Markdown 里会是一段文字")
+    clause_lines = [b for b in blocks if _CLAUSEISH.match(b.text or "")]
+    if len(clause_lines) >= 2 and not clauses:
+        score -= 0.20
+        notes.append("检测到多条「第 X 条」条款但没有条款结构")
+    if doc.pages >= 2 and doc.text_chars > 1500 and not headings:
+        score -= 0.20
+        notes.append("多页文档没有识别到任何标题或章节，结构可能丢失")
+    return max(0.15, score), notes
+
+
+def _reading_order_score(doc: Document) -> float | None:
+    """Only measurable when the page really had columns; then verify the order."""
+    info = doc.meta.get("reading_order") or {}
+    multi = int(info.get("multi") or 0)
+    if not multi:
+        return None
+    violations = int(info.get("violations") or 0)
+    return max(0.0, 1.0 - violations / max(1, multi))
+
+
+def _field_score(doc: Document) -> tuple[float | None, list[str]]:
+    """Score an extraction run if fields.py recorded one."""
+    info = doc.meta.get("extraction") or {}
+    total = int(info.get("total") or 0)
+    if not total:
+        return None, []
+    found = int(info.get("found") or 0)
+    evidenced = int(info.get("evidenced") or 0)
+    conflicts = int(info.get("conflicts") or 0)
+    coverage = found / total
+    evidence = evidenced / max(1, found)
+    score = 0.6 * coverage + 0.3 * evidence + 0.1 * (1.0 - min(1.0, conflicts / max(1, found)))
+    notes: list[str] = []
+    if found < total:
+        notes.append(f"字段抽取：{found}/{total} 个字段有值，其余在原文中没有找到")
+    if conflicts:
+        notes.append(f"字段抽取：{conflicts} 个字段出现冲突值，需要人工确认")
+    if found and evidenced < found:
+        notes.append(f"字段抽取：{found - evidenced} 个字段没有可定位的原文证据")
+    return max(0.0, score), notes

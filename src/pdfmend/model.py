@@ -35,11 +35,18 @@ class Table:
 
 @dataclass
 class Block:
-    kind: str  # heading | para | table | page
+    kind: str  # heading | para | bullet_list | numbered_list | clause | quote | table | page
     text: str = ""
     level: int = 0
     table: Table | None = None
     page: int | None = None
+    # structure evidence: where the block sits on the page and how big it is
+    x0: float = 0.0
+    top: float = 0.0
+    size: float = 0.0
+    items: list[str] = field(default_factory=list)
+    number: str = ""  # clause number, e.g. "1.2"
+    source: str = "pdf"  # pdf | ocr | docx | xlsx | pptx
 
 
 @dataclass
@@ -54,6 +61,8 @@ class Document:
     damaged_chars: int = 0
     scanned_pages: list[int] = field(default_factory=list)
     meta: dict = field(default_factory=dict)
+    structure: dict | None = None
+    profile: str | None = None
 
 
 @dataclass
@@ -63,6 +72,7 @@ class Report:
     verdict: str
     reasons: list[str]
     tables: list[Table]
+    dimensions: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         d = self.document
@@ -79,6 +89,8 @@ class Report:
             "score": self.score,
             "verdict": self.verdict,
             "reasons": self.reasons,
+            "dimensions": self.dimensions,
+            "profile": d.profile,
             "tables": [
                 {
                     "id": t.id,
@@ -93,4 +105,5 @@ class Report:
                 for t in self.tables
             ],
             "meta": d.meta,
+            "structure": d.structure,
         }

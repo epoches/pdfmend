@@ -214,6 +214,72 @@ def extract_fields(
     return parse_json(content)
 
 
+CHUNK_PROMPT = (
+    "你是严谨的文档字段抽取器。用户给的是长文档的一个片段，只依据这个片段作答："
+    "片段里没有的字段不要用常识补全，填 null。每个抽到的字段必须给出原文证据"
+    "（照抄出现该值的句子）和它所在的页码，以及 0 到 1 的置信度。"
+    "只输出一个 JSON 对象，形如 "
+    '{"fields": {"字段名": {"value": ..., "evidence": "...", "source_page": 1, '
+    '"confidence": 0.9}}}，不要输出别的文字。'
+)
+
+
+def build_chunk_messages(
+    text: str,
+    schema_text: str,
+    title: str,
+    page_start: int = 0,
+    page_end: int = 0,
+    context: str | None = None,
+    focus: list[str] | None = None,
+    images: list[bytes] | None = None,
+    max_chars: int = 20000,
+) -> list[dict]:
+    """Prompt for one chunk: a page range, a field list, and quoted evidence."""
+    clipped = text if len(text) <= max_chars else text[:max_chars] + "\n...(本块已截断)"
+    head = f"文档类型：{title}\n本片段范围：第 {page_start}–{page_end} 页\n字段清单：\n{schema_text}\n"
+    if focus:
+        head += "\n只找这些字段，其余字段不要输出：" + "、".join(focus) + "\n"
+    if context:
+        head += "\n[上文，仅供参考，不要从这里抽取]\n" + context + "\n"
+    body = head + "\n文档片段：\n" + clipped
+    if not images:
+        return [
+            {"role": "system", "content": CHUNK_PROMPT},
+            {"role": "user", "content": body},
+        ]
+    parts: list[dict] = [{"type": "text", "text": body}]
+    for image in images:
+        parts.append({"type": "image_url", "image_url": {"url": _data_url(image)}})
+    return [
+        {"role": "system", "content": CHUNK_PROMPT + " 用户还附了片段所在页的图片，以图片补充文本。"},
+        {"role": "user", "content": parts},
+    ]
+
+
+def extract_chunk(
+    text: str,
+    schema_text: str,
+    title: str,
+    page_start: int = 0,
+    page_end: int = 0,
+    cfg: Config | None = None,
+    *,
+    context: str | None = None,
+    focus: list[str] | None = None,
+    images: list[bytes] | None = None,
+    max_tokens: int = 2000,
+) -> dict:
+    """One chunk -> ``{"fields": {name: {value, evidence, source_page, confidence}}}``."""
+    cfg = cfg or config_from_env()
+    messages = build_chunk_messages(
+        text, schema_text, title, page_start, page_end, context=context, focus=focus, images=images
+    )
+    data = parse_json(chat(messages, cfg, json_object=True, max_tokens=max_tokens))
+    fields = data.get("fields")
+    return {"fields": fields} if isinstance(fields, dict) else data
+
+
 def understand_image(
     image_bytes: bytes,
     question: str,
