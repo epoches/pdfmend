@@ -24,6 +24,9 @@ tmp/
 !.env.example
 *.pem
 *.key
+# server-side config carries the DB password, admin token and SMTP code
+server/config.php
+server/api/config.php
 
 # 人工纠错记录是本地数据
 corrections.jsonl
