@@ -45,14 +45,18 @@ markitdown 是个好工具，我们在它上面省了很多时间。但它面向
 
 pdfmend 是**免费、无功能限制**的（MIT 许可，源码全在仓库里）。如果它帮你省下了一个下午，可以扫上面的**微信赞赏码**请作者喝杯咖啡 —— 这是自愿的，不赞赏也不影响任何功能。
 
-**注册码**（可选，支持作者可换取一个长期注册码）：把「关于」里显示的**本机机器码**发给作者，会收到一个由「用户名 + 签发日期 + 机器码」算出的注册码。填在「设置 → 注册」或运行：
+**注册码**（可选，支持作者可换取一个长期注册码）：两步。
+
+1. **申请**：在「关于 → 注册…」里填 **注册名、邮箱、赞助码/交易单号**，点「提交申请」。请求会带上本机机器码，发到 `https://jyang.top/api/regrequest.php`。
+2. **注册**：作者审核后生成注册码并发到你的邮箱。收到后在同一窗口填 **注册名 + 注册码**，点「验证并注册」（也可用命令行）：
 
 ```bash
-pdfmend register --user 你的用户名 --code 20261117-XXXXXXXX
+pdfmend request-code --user 你的注册名 --email you@example.com --txn 4200001234
+pdfmend register --user 你的注册名 --code 20261117-XXXXXXXX
 pdfmend license            # 查看注册状态与本机机器码
 ```
 
-注册码在本机就能离线验算（同一用户名 + 日期 + 机器码必然算出同一串），所以内网、断网环境也能用；联网时还会向 `https://jyang.top/api/regfileconverter.php?id=…&code=…` 复核一次（该接口已上线，`admin`/`admin` 是公开测试对）。**未注册的副本每转换 5 个文件会提醒一次打赏码，注册后不再提醒**；转换记录只写在本机 `tmp/conversions.jsonl`，不会上传。
+注册码由「注册名 + 签发日期 + 本机机器码」算出，所以拿到码之后**本机离线就能验算**（内网、断网都能用）；联网时还会向 `https://jyang.top/api/regfileconverter.php?id=…&code=…` 复核一次（`admin`/`admin` 是公开测试对）。**未注册的副本每转换 5 个文件会提醒一次打赏码，注册后不再提醒**；转换记录只写在本机 `tmp/conversions.jsonl`，不会上传。
 
 说清楚这套东西的性质：它是「提醒 + 致谢」，不是 DRM。源码是 MIT，**对懂开发的人来说本来就没有任何限制** —— 改两行、或者干脆自己写个校验，都能绕过去；这点没必要藏着，就写在 README 里。软件界面不宣传它，因为普通用户不需要知道，也不该被这种话术打扰。它挡的是「随手把 exe 拷给全公司」，不是有意的破解者。所有功能对未注册用户同样开放。
 
@@ -61,7 +65,17 @@ pdfmend license            # 查看注册状态与本机机器码
 
 pdfmend is free software with no feature limits (MIT, full source in this repo). If it saved you an afternoon, you can scan the WeChat QR code above and buy the author a coffee — entirely optional, nothing is locked behind it.
 
-**Registration codes** (optional, a thank-you for supporters): send the *machine code* shown in **About** and you get a code derived from `username + issue date + machine code`. Enter it under **Settings → Register** or run `pdfmend register --user NAME --code CODE`. Because the code is a keyed hash of those three inputs, it verifies offline on the same machine (works on intranets with no internet); when online the app also re-checks it against `https://jyang.top/api/regfileconverter.php?id=…&code=…`. Unregistered copies see the donation card once every five conversions; registered copies never do. Conversion history stays on your machine in `tmp/conversions.jsonl` — it is never uploaded. Licenses are per machine: a new computer needs a new code.
+**Registration codes** (optional, a thank-you for supporters): two steps.
+
+1. **Request** — in **About → Register…**, enter a *name*, your *email* and the *donation/order number*, then press "Submit request". The request carries this machine's code and goes to `https://jyang.top/api/regrequest.php`.
+2. **Register** — once approved, the code is emailed to you. Enter *name + code* in the same dialog (or use the CLI):
+
+```bash
+pdfmend request-code --user NAME --email you@example.com --txn 4200001234
+pdfmend register --user NAME --code 20261117-XXXXXXXX
+```
+
+The code is a keyed hash of `name + issue date + machine code`, so it verifies offline on that machine (works on intranets with no internet); when online the app also re-checks it against `https://jyang.top/api/regfileconverter.php?id=…&code=…`. Unregistered copies see the donation card once every five conversions; registered copies never do. Conversion history stays on your machine in `tmp/conversions.jsonl` — it is never uploaded. Licenses are per machine: a new computer needs a new code, which is why the request includes the machine code.
 
 </details>
 
@@ -175,7 +189,7 @@ pdfmend feedback stats                         # 看哪类错误反复出现
 
 边界：证据由模型给出，可能张冠李戴，金额、日期、甲乙方务必对照原件；扫描件的表格仍然只出文字行。
 
-## 桌面版：PDFMend Desktop（v0.6–v0.7，Windows 10/11 x64）
+## 桌面版：PDFMend Desktop（v0.6–v0.8，Windows 10/11 x64）
 
 不想开命令行的人，用同一个引擎做的图形界面：拖文件 → 选格式 → 看质量分 → 拿走 Markdown / Excel。
 
@@ -186,6 +200,7 @@ pdfmend feedback stats                         # 看哪类错误反复出现
 - **Key 存进 Windows 凭据管理器**（`keyring`），不写配置文件、不写日志；没 Key 时所有本地功能照常可用。
 - 免费、MIT、无账号、无云上传；「支持作者」只是一页说明，不做支付、不加权限。
 - v0.7：侧栏「关于」显示版本、作者 `epoch`、本机机器码、注册状态与微信赞赏码；注册码可选（见上文「支持作者」），**不注册也不限制任何功能**，只是未注册副本每 5 次转换提醒一次。
+- v0.8：注册改成两步——「申请」（注册名 + 邮箱 + 赞助单号 → 提交到服务器）和「注册」（注册名 + 邮件里的码）。审核在服务端的人工页面完成，批准时自动生成并发邮件。
 - 转换记录写在本机 `tmp/conversions.jsonl`（程序目录旁，绿色版可随身带）；只在本机，不上传。`PDFMEND_TMP` 可改位置，装到只读目录时自动退回 `%LOCALAPPDATA%\\PDFMend\\tmp`。
 
 自己打包：
@@ -322,7 +337,7 @@ v0.5 起文档分是六个可测维度（不可测的维度会丢弃，剩下的
 
 ```bash
 pip install -e ".[dev]"
-pytest                     # 154 个测试，含真实 PDF/DOCX/XLSX 夹具与离屏 GUI 测试
+pytest                     # 157 个测试，含真实 PDF/DOCX/XLSX 夹具与离屏 GUI 测试
 pip install -e ".[dev,desktop]"   # 桌面版：额外装 PySide6 + keyring
 python examples/make_demo.py
 python examples/make_messy.py

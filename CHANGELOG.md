@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0 — 2026-11-18
+
+- **注册改成两步：先申请，等邮件**。「关于 → 注册…」现在分「第一步 · 申请注册码」（注册名、邮箱、赞助码/交易单号 → 提交）和「第二步 · 填注册码」（注册名 + 邮件里的码 → 验证并注册）。申请会把本机机器码一起提交给 `https://jyang.top/api/regrequest.php`。
+- 命令行对应：`pdfmend request-code --user NAME --email you@example.com --txn 单号`。
+- 服务端新增 `api/regrequest.php`（写 `reg_request` 待审）、`api/regadmin.php`（令牌保护的审核页：批准后按「注册名 + 今天 + 机器码」生成注册码、写入 `reg`、尝试发邮件；发信失败时页面直接显示码，可手动转发）、`api/lib.php`（PDO、Base32+HMAC 与客户端同算法、SMTP/mail 发信）。`schema.sql` 增加 `reg_request` 表。
+- SMTP 可选：`config.php` 的 `smtp` 段填了就走 SMTP（465/587），留空退回 `mail()`。这台 ECS 的 postfix 未运行且阿里云封 25 端口，所以线上建议填 SMTP 授权码。
+- 实测：PHP 生成的码与 Python `make_code` 完全一致（`reqtest` + `A1B2C3D4E5F6` → `20261118-4KAYYW6JRTGGACH2`），本机离线验证与服务器校验都通过。
+- 顺带发现：该站点对**没有 `Content-Type` 的 POST** 也回 403，客户端已固定带上。
+
 ## 0.7.1 — 2026-11-17
 
 - **注册服务器已上线并打通**：`https://jyang.top/api/regfileconverter.php`（PHP + MySQL `fileconverter.reg`）。`admin`/`admin` 是公开测试对，`epoch` 有一个按机器码签发的正式码。实测：`register --user admin --code admin` 走服务器通道通过；错码返回 `ok:false`；本机离线验算照常。

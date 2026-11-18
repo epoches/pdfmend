@@ -43,6 +43,8 @@ from pdfmend import __version__
 SECRET = b"pdfmend-reg-2026-epoches"
 SERVER_URL = "https://jyang.top/api/regfileconverter.php"
 FALLBACK_URL = "http://jyang.top/api/regfileconverter.php"
+REQUEST_URL = "https://jyang.top/api/regrequest.php"
+FALLBACK_REQUEST_URL = "http://jyang.top/api/regrequest.php"
 DATE_RE = re.compile(r"^(\d{8})-([A-Z2-7]{16})$")
 TEST_PAIR = ("admin", "admin")
 
@@ -243,6 +245,66 @@ def check_server(user: str, code: str, timeout: float = 6.0) -> ServerResult:
 
 
 # --------------------------------------------------------------------- public
+def _open(request: urllib.request.Request, timeout: float) -> str:
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        return response.read(8192).decode("utf-8", "replace")
+
+
+def request_code(
+    user: str,
+    email: str,
+    txn: str,
+    mac: str | None = None,
+    timeout: float = 10.0,
+) -> ServerResult:
+    """Ask the vendor for a code (email + donation id + this machine).
+
+    Nothing is minted until the request is approved, so this only queues it.
+    """
+    user = normalize_user(user)
+    email = (email or "").strip()
+    txn = (txn or "").strip()
+    if not user or not email or not txn:
+        return ServerResult(ok=False, reachable=True, message="请填写注册名、邮箱和赞助单号")
+    if "@" not in email or "." not in email.split("@")[-1]:
+        return ServerResult(ok=False, reachable=True, message="邮箱格式看起来不对")
+    fields = {
+        "id": user,
+        "email": email,
+        "txn": txn,
+        "mac": (mac or machine_id()).upper(),
+    }
+    body = urllib.parse.urlencode(fields).encode("utf-8")
+    headers = {
+        "User-Agent": f"PDFMend/{__version__} (+https://github.com/epoches/pdfmend)",
+        "Content-Type": "application/x-www-form-urlencoded; charset=utf-8",
+    }
+    last = ""
+    for base in (REQUEST_URL, FALLBACK_REQUEST_URL):
+        try:
+            request = urllib.request.Request(base, data=body, headers=headers, method="POST")
+            raw = _open(request, timeout)
+            try:
+                data = json.loads(raw)
+            except ValueError:
+                data = {"raw": raw.strip()[:200]}
+            ok = _parse_flag(data)
+            message = ""
+            if isinstance(data, dict):
+                message = str(data.get("message") or data.get("msg") or "")
+            return ServerResult(ok=ok, reachable=True, message=message or ("已提交" if ok else "提交失败"), payload=data)
+        except urllib.error.HTTPError as exc:
+            detail = ""
+            try:
+                detail = exc.read(400).decode("utf-8", "replace")
+            except OSError:
+                pass
+            last = f"HTTP {exc.code} {detail[:120]}".strip()
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            last = str(getattr(exc, "reason", exc))
+    return ServerResult(ok=False, reachable=False, message=f"提交失败：{last}")
+
+
 def register(
     user: str,
     code: str,

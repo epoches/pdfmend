@@ -1,10 +1,10 @@
 ; Inno Setup script for PDFMend (Standard, one-folder build).
 ; Build the app first:  powershell -File packaging\build.ps1
-; Then compile:         iscc packaging\installer.iss /DAppVersion=0.6.0
+; Then compile:         iscc packaging\installer.iss /DAppVersion=0.8.0
 ; Get Inno Setup from https://jrsoftware.org/isdl.php
 
 #ifndef AppVersion
-  #define AppVersion "0.6.0"
+  #define AppVersion "0.8.0"
 #endif
 
 #define AppName "PDFMend"

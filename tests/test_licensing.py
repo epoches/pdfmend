@@ -110,3 +110,42 @@ def test_generator_and_verifier_agree(day):
     code = licensing.make_code("张三", day, "001122334455")
     # The verifier is case-insensitive about the code, not the name.
     assert licensing.verify_code("张三", code.lower(), mac="001122334455")[0]
+
+
+def test_request_code_posts_the_expected_fields(monkeypatch):
+    seen: dict = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self, _n=-1):
+            return '{"ok": true, "message": "已提交"}'.encode()
+
+    def fake_urlopen(request, timeout=None):
+        seen["url"] = request.full_url
+        seen["body"] = request.data.decode()
+        seen["ua"] = request.get_header("User-agent")
+        return FakeResponse()
+
+    monkeypatch.setattr(licensing.urllib.request, "urlopen", fake_urlopen)
+    result = licensing.request_code("张三", "me@example.com", "4200001234", mac="AABBCCDDEEFF")
+    assert result.ok and "已提交" in result.message
+    assert seen["url"].endswith("/api/regrequest.php")
+    assert "email=me%40example.com" in seen["body"]
+    assert "txn=4200001234" in seen["body"]
+    assert "mac=AABBCCDDEEFF" in seen["body"]
+    assert "PDFMend/" in seen["ua"]
+
+
+def test_request_code_validates_input_before_touching_the_network(monkeypatch):
+    def boom(*_a, **_k):
+        raise AssertionError("must not call the network")
+
+    monkeypatch.setattr(licensing.urllib.request, "urlopen", boom)
+    assert not licensing.request_code("", "a@b.co", "x").ok
+    assert not licensing.request_code("alice", "not-an-email", "x").ok
+    assert not licensing.request_code("alice", "a@b.co", "").ok

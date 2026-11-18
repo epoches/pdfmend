@@ -289,6 +289,15 @@ def cmd_register(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def cmd_request_code(args: argparse.Namespace) -> int:
+    result = licensing.request_code(args.user, args.email, args.txn)
+    _p(("✅ " if result.ok else "❌ ") + result.message)
+    if result.ok:
+        _p(f"机器码：{licensing.machine_id()}（已随申请一并提交）")
+        _p("收到邮件后：pdfmend register --user <注册名> --code <注册码>")
+    return 0 if result.ok else 1
+
+
 def cmd_license(_: argparse.Namespace) -> int:
     _p(licensing.license_summary())
     _p(f"机器码：{licensing.machine_id()}")
@@ -392,6 +401,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     lic = sub.add_parser("license", help="显示注册状态与机器码")
     lic.set_defaults(func=cmd_license)
+
+    req = sub.add_parser("request-code", help="申请注册码（填邮箱、注册名、赞助单号），等邮件")
+    req.add_argument("--user", required=True, help="想绑定到哪个注册名")
+    req.add_argument("--email", required=True, help="注册码发到这个邮箱")
+    req.add_argument("--txn", required=True, help="赞助/订单单号")
+    req.set_defaults(func=cmd_request_code)
     return p
 
 
@@ -404,7 +419,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if argv[0] not in (
         "convert", "c", "check", "k", "fields", "structure", "feedback",
-        "register", "license", "version",
+        "register", "license", "request-code", "version",
         "-V", "--version", "-h", "--help",
     ):
         argv = ["convert", *argv]

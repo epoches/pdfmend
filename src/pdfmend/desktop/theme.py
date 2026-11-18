@@ -53,6 +53,7 @@ def stylesheet(theme: str = "light") -> str:
         background: {c['panel']}; border: 1px solid {c['border']}; border-radius: 12px;
     }}
     QLabel#PageTitle {{ font-size: 22px; font-weight: 700; }}
+    QLabel#SectionTitle {{ color: {c['muted']}; font-weight: 600; padding-top: 6px; }}
     QLabel#PageHint, QLabel#Muted {{ color: {c['muted']}; }}
     QLabel#ScoreValue {{ font-size: 46px; font-weight: 800; }}
     QLabel#ScoreVerdict {{ font-size: 16px; font-weight: 600; }}

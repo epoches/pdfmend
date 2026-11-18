@@ -51,24 +51,43 @@ class _RegisterWorker(QRunnable):
         self.signals.done.emit(ok, message)
 
 
+class _RequestSignals(QObject):
+    done = Signal(bool, str)
+
+
+class _RequestWorker(QRunnable):
+    """Queues a code request on the server (email + donation id + machine)."""
+
+    def __init__(self, user: str, email: str, txn: str) -> None:
+        super().__init__()
+        self.user = user
+        self.email = email
+        self.txn = txn
+        self.signals = _RequestSignals()
+
+    def run(self) -> None:  # noqa: D401 - QRunnable entry point
+        result = licensing.request_code(self.user, self.email, self.txn)
+        self.signals.done.emit(result.ok, result.message)
+
+
 class RegisterDialog(QDialog):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("注册 PDFMend")
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(560)
         self.pool = QThreadPool.globalInstance()
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 20, 24, 20)
-        layout.setSpacing(10)
+        layout.setSpacing(8)
 
         title = QLabel("注册")
         title.setObjectName("PageTitle")
         layout.addWidget(title)
 
         hint = QLabel(
-            "注册码由「用户名 + 注册日期 + 本机 MAC」算出，所以内网、离线也能验证。"
-            "把下面这行机器码发给作者，可以拿到与你用户名匹配的注册码。"
+            "注册码由「注册名 + 签发日期 + 本机 MAC」算出，所以内网、离线也能验证。"
+            "先填邮箱与赞助单号申请，作者审核后会把码发到邮箱。"
         )
         hint.setObjectName("Muted")
         hint.setWordWrap(True)
@@ -79,13 +98,36 @@ class RegisterDialog(QDialog):
         machine.setTextInteractionFlags(Qt.TextSelectableByMouse)
         layout.addWidget(machine)
 
+        step1 = QLabel("第一步 · 申请注册码")
+        step1.setObjectName("SectionTitle")
+        layout.addWidget(step1)
+
         self.user = QLineEdit()
-        self.user.setPlaceholderText("用户名，例如 admin")
+        self.user.setPlaceholderText("注册名，例如 张三 或 admin")
         self.user.setText(licensing.load_license().username)
         layout.addWidget(self.user)
 
+        self.email = QLineEdit()
+        self.email.setPlaceholderText("邮箱，注册码会发到这里")
+        layout.addWidget(self.email)
+
+        self.txn = QLineEdit()
+        self.txn.setPlaceholderText("赞助码 / 交易单号（微信支付里的商户单号）")
+        layout.addWidget(self.txn)
+
+        request = QPushButton("提交申请")
+        request.clicked.connect(self._request)
+        request_row = QHBoxLayout()
+        request_row.addWidget(request)
+        request_row.addStretch(1)
+        layout.addLayout(request_row)
+
+        step2 = QLabel("第二步 · 填注册码")
+        step2.setObjectName("SectionTitle")
+        layout.addWidget(step2)
+
         self.code = QLineEdit()
-        self.code.setPlaceholderText("注册码，例如 20261117-ABCDEFGH23456789")
+        self.code.setPlaceholderText("邮件里的注册码，例如 20261117-ABCDEFGH23456789")
         layout.addWidget(self.code)
 
         self.status = QLabel(licensing.license_summary())
@@ -109,6 +151,15 @@ class RegisterDialog(QDialog):
         buttons.addStretch(1)
         buttons.addWidget(close)
         layout.addLayout(buttons)
+
+    def _request(self) -> None:
+        self.status.setText("提交中…")
+        worker = _RequestWorker(self.user.text(), self.email.text(), self.txn.text())
+        worker.signals.done.connect(self._requested)
+        self.pool.start(worker)
+
+    def _requested(self, ok: bool, message: str) -> None:
+        self.status.setText(("✅ " if ok else "❌ ") + message)
 
     def _submit(self, allow_server: bool) -> None:
         self.status.setText("验证中…")

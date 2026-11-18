@@ -26,3 +26,25 @@ CREATE TABLE IF NOT EXISTS `reg` (
 INSERT INTO `reg` (`username`, `regcode`, `note`)
 VALUES ('admin', 'admin', 'built-in test pair — remove in production')
 ON DUPLICATE KEY UPDATE `note` = VALUES(`note`);
+
+-- Code requests: a user submits email + name + donation id + machine code,
+-- the vendor approves in api/regadmin.php, which mints the code, writes it to
+-- `reg` and mails it.
+CREATE TABLE IF NOT EXISTS `reg_request` (
+  `id`          INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `username`    VARCHAR(64)  NOT NULL,
+  `email`       VARCHAR(190) NOT NULL,
+  `txn`         VARCHAR(64)  NOT NULL COMMENT 'donation / order number',
+  `machine`     VARCHAR(32)  DEFAULT NULL,
+  `status`      ENUM('pending','approved','sent','rejected') NOT NULL DEFAULT 'pending',
+  `regcode`     VARCHAR(64)  DEFAULT NULL,
+  `mailed`      TINYINT(1)   NOT NULL DEFAULT 0,
+  `note`        VARCHAR(255) DEFAULT NULL,
+  `ip`          VARCHAR(64)  DEFAULT NULL,
+  `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `approved_at` DATETIME     DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_status` (`status`),
+  KEY `idx_user` (`username`),
+  KEY `idx_txn` (`txn`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

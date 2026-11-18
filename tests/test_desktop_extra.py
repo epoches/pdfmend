@@ -86,3 +86,35 @@ def test_registered_copy_never_prompts(app, tmp_path, monkeypatch):
     window._after_convert()
     assert calls == []
     window.deleteLater()
+
+
+def test_register_dialog_offers_request_then_code(app, tmp_path, monkeypatch):
+    """The dialog must have both steps: request a code, then enter it."""
+    from PySide6.QtCore import QThreadPool
+
+    from pdfmend.desktop.dialogs.about import RegisterDialog
+
+    monkeypatch.setenv("PDFMEND_TMP", str(tmp_path / "state"))
+    seen: list[tuple] = []
+    monkeypatch.setattr(
+        licensing,
+        "request_code",
+        lambda user, email, txn, **_kw: (
+            seen.append((user, email, txn))
+            or licensing.ServerResult(ok=True, reachable=True, message="已提交，等邮件")
+        ),
+    )
+
+    dialog = RegisterDialog()
+    assert dialog.email.placeholderText()
+    assert "赞助" in dialog.txn.placeholderText() or "单号" in dialog.txn.placeholderText()
+    dialog.user.setText("alice")
+    dialog.email.setText("alice@example.com")
+    dialog.txn.setText("4200009999")
+    dialog._request()
+    QThreadPool.globalInstance().waitForDone(3000)
+    for _ in range(5):
+        app.processEvents()
+    assert seen == [("alice", "alice@example.com", "4200009999")]
+    assert "已提交" in dialog.status.text()
+    dialog.deleteLater()
