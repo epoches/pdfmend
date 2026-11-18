@@ -54,7 +54,12 @@ try {
                 . "这个码绑定本机机器码 " . $row['machine'] . "，换机需要重新申请。\n\n"
                 . "如果填错了或不需要了，忽略这封邮件即可。\n"
                 . "—— PDFMend / https://github.com/epoches/pdfmend\n";
-            $mailed = pdfmend_mail((string) $row['email'], 'PDFMend 注册码', $body);
+            $mailed = pdfmend_mail(
+                (string) $row['email'],
+                'PDFMend 注册码',
+                $body,
+                (string) (pdfmend_config()['notify_to'] ?? '')
+            );
             $update = $pdo->prepare(
                 'UPDATE reg_request SET status = :status, regcode = :code, approved_at = NOW(), mailed = :mailed '
                 . 'WHERE id = :id'

@@ -81,22 +81,23 @@ function pdfmend_code(string $user, string $mac, ?string $day = null): string
  * Send the code by mail.  Uses SMTP when config.php carries an `smtp` block,
  * otherwise falls back to PHP's mail() (needs a working local MTA).
  */
-function pdfmend_mail(string $to, string $subject, string $body): bool
+function pdfmend_mail(string $to, string $subject, string $body, string $bcc = ''): bool
 {
     $config = pdfmend_config();
     $from = (string) ($config['mail_from'] ?? 'no-reply@jyang.top');
     $smtp = $config['smtp'] ?? null;
     if (is_array($smtp) && !empty($smtp['host'])) {
-        return pdfmend_smtp($smtp, $from, $to, $subject, $body);
+        return pdfmend_smtp($smtp, $from, $to, $subject, $body, $bcc);
     }
     $headers = "From: PDFMend <{$from}>\r\n"
+        . ($bcc !== '' ? "Bcc: <{$bcc}>\r\n" : '')
         . "MIME-Version: 1.0\r\n"
         . "Content-Type: text/plain; charset=UTF-8\r\n";
     $encoded = '=?UTF-8?B?' . base64_encode($subject) . '?=';
     return @mail($to, $encoded, $body, $headers);
 }
 
-function pdfmend_smtp(array $smtp, string $from, string $to, string $subject, string $body): bool
+function pdfmend_smtp(array $smtp, string $from, string $to, string $subject, string $body, string $bcc = ''): bool
 {
     $host = (string) $smtp['host'];
     $port = (int) ($smtp['port'] ?? 465);
@@ -153,6 +154,10 @@ function pdfmend_smtp(array $smtp, string $from, string $to, string $subject, st
     $read();
     $write('RCPT TO:<' . $to . '>');
     $read();
+    if ($bcc !== '') {
+        $write('RCPT TO:<' . $bcc . '>');
+        $read();
+    }
     $write('DATA');
     $read();
     $headers = "From: PDFMend <{$from}>\r\n"

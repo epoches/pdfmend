@@ -1,8 +1,10 @@
 # Registration server（jyang.top）
 
-> 状态：**已部署**（2026-11-17 验证接口，2026-11-18 增加申请/审核）。
+> 状态：**已部署**（2026-11-17 验证接口，2026-11-18 增加申请/审核 + QQ SMTP）。
 > 线上自测：
 > `curl 'https://jyang.top/api/regfileconverter.php?id=admin&code=admin'` → `{"ok":true,...}`。
+> 已用 `smtp.qq.com:465`（发件人 `641279141@qq.com`，密送同址）实测发出一封，
+> 收件箱可见标题「PDFMend 注册码」。
 
 ## 三个接口
 
